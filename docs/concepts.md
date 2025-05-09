@@ -2,7 +2,9 @@
 
 ## Network
 
-* A Cluster is built of Nodes. All Nodes belong to the network where unrestricted multicast communication is possible.
+A Cluster is built of Nodes. All Nodes belong to the network where unrestricted multicast communication is possible.
+
+A Node in a cluster is identified by a Node ID, which is defined from the Node's Public Key.
 
 ## Data
 
@@ -65,16 +67,52 @@ An ObjectSet stores the following dat:
 
 ## Block Index
 
-Each node has its own Key/Value storage of Block Metadata keyed by OID.
-
-Each Note periodically announces the entire content of the Block Index.
+Each Node has its own Key/Value storage of Block Metadata keyed by OID.
 
 ## Replication
 
-Each Node 
+### Tracking changes
 
+Each Node tracks changes to its *local* Block Index with a journal log of the following structure:
+
+    * Node Sequence Number
+    * Block Metadata
+
+A Sequence Number is a monotonically increasing counter of all operations on this Node.
+
+### Announcing changes
+
+Each Node periodically announces its value of the Update Log Sequence Number along with its Node ID.
+
+### Swarm
+
+Each node maintains the list of its peers (persisted on disk) tracking the following:
+
+    * Peer Node ID
+    * Peer Network Address
+    * Peer Last Seen Time
+    * Peer Last Announced Sequence Number
+
+### Fetching the changes
+
+If a Node sees that its Peer Node announced a `Sequence Number` that is greater than `Last Announced Sequence Number` for that Peer, it asks a Peer Node for all changes that happened since the `Last Announced Sequence Number`.
+
+It then applies all the received Block Metadata to its own Block Index, updating it's own Journal Log as necessary.
+
+The `Last Announced Sequence Number` for the Peer Node is updated if and only if all received block metadata were correctly updated and persisted on disk.
+
+### Applying the changes
+
+A change received from a Peer Node is applied locally if all of the conditions are met:
+    - The received Block Metadata is actually different.
+    - The received Block Update Time is newer than the locally tracked.
 
 ## Garbage collection
+
+### Block garbage collection
+
+### Metadata garbage collection
+
 
 
 # Scalability
