@@ -8,20 +8,18 @@ import (
 	"juren/commands"
 	"juren/config"
 	"juren/datastore/block"
+	"juren/net/crpc"
 	"juren/oid"
-	"juren/swarm/client"
 	"juren/swarm/protocol"
-	"juren/swarm/server"
+	"net"
 	"os"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
-var log = logrus.New()
-
 func setLogLevel(level string) {
-	l, err := logrus.ParseLevel(level)
+	l, err := log.ParseLevel(level)
 	if err != nil {
 		log.Fatalf("Invalid log level: %v", err)
 	}
@@ -79,6 +77,14 @@ func (b *blockIndex) EnumerateBySeq(uint64, uint64) ([]*block.MetadataWithSeq, e
 	return bl, nil
 }
 
+type DemoServer struct {
+}
+
+func (d *DemoServer) PeerSync(req *protocol.PeerSyncRequest, res *protocol.PeerSyncResponse) error {
+	log.Infof("Received PeerSync from %s, seq: %d", req.NodeID.String(), req.SequenceNumber)
+	return errors.ErrUnsupported
+}
+
 func RunTest(ctx context.Context, cfg *config.Config) {
 	log.Infof("Running test for ipfs-go-storage...")
 
@@ -128,12 +134,17 @@ func RunTest(ctx context.Context, cfg *config.Config) {
 	}
 	log.Infof("NodeID: %s", nodeID.String())
 
-	srv := server.NewServer(*nodeID, &blockIndex{})
-	srv.Serve(ctx)
+	srv := crpc.NewServer()
+	srv.Register(&DemoServer{})
+	l, err := net.Listen("tcp", ":5001")
+	if err != nil {
+		log.Fatalf("Failed to create a listener: %v", err)
+	}
+	go srv.Serve(l)
 
 	time.Sleep(1 * time.Second)
 
-	client, err := client.Dial("localhost:5001")
+	cli, err := crpc.Dial("tcp", "localhost:5001")
 	if err != nil {
 		log.Fatalf("Failed to create RPC client: %v", err)
 	}
@@ -143,18 +154,51 @@ func RunTest(ctx context.Context, cfg *config.Config) {
 		SequenceNumber: 0,
 		BatchSize:      10,
 	}
+	res := &protocol.PeerSyncResponse{}
 
-	cctx, _ := context.WithTimeout(ctx, 1*time.Second)
-	res, err := client.PeerSync(cctx, req)
+	err = cli.Call(ctx, "DemoServer.PeerSync", req, res)
 	if err != nil {
-		log.Fatalf("Failed to call PeerSync: %v", err)
+		log.Errorf("Failed to call PeerSync: %v", err)
+	}
+	for _, e := range res.Entries {
+		log.Infof("Entry: seq=%d, oid=%s, length=%d, time=%s, deleted=%t", e.Sequence, e.Metadata.Oid.String(), e.Metadata.Length, e.Metadata.UpdateTime, e.Metadata.IsDeleted)
 	}
 
-	log.Infof("Response from %s, entries: %d", res.NodeID.String(), len(res.Entries))
-	for _, e := range res.Entries {
-		log.Infof("Entry: seq=%d, oid=%s, length=%d, time=%s, deleted=%t", e.Sequence, e.Metadata.Oid.String(), e.Metadata.Length, e.Metadata.UpdateTime,
-			e.Metadata.IsDeleted)
+	err = cli.Call(ctx, "DemoServer.PeerSync", req, res)
+	if err != nil {
+		log.Errorf("Failed to call PeerSync: %v", err)
 	}
+	for _, e := range res.Entries {
+		log.Infof("Entry: seq=%d, oid=%s, length=%d, time=%s, deleted=%t", e.Sequence, e.Metadata.Oid.String(), e.Metadata.Length, e.Metadata.UpdateTime, e.Metadata.IsDeleted)
+	}
+
+	// srv := server.NewServer(*nodeID, &blockIndex{})
+	// srv.Serve(ctx)
+
+	// time.Sleep(1 * time.Second)
+
+	// client, err := client.Dial("localhost:5001")
+	// if err != nil {
+	// 	log.Fatalf("Failed to create RPC client: %v", err)
+	// }
+
+	// req := &protocol.PeerSyncRequest{
+	// 	NodeID:         *nodeID,
+	// 	SequenceNumber: 0,
+	// 	BatchSize:      10,
+	// }
+
+	// cctx, _ := context.WithTimeout(ctx, 1*time.Second)
+	// res, err := client.PeerSync(cctx, req)
+	// if err != nil {
+	// 	log.Fatalf("Failed to call PeerSync: %v", err)
+	// }
+
+	// log.Infof("Response from %s, entries: %d", res.NodeID.String(), len(res.Entries))
+	// for _, e := range res.Entries {
+	// 	log.Infof("Entry: seq=%d, oid=%s, length=%d, time=%s, deleted=%t", e.Sequence, e.Metadata.Oid.String(), e.Metadata.Length, e.Metadata.UpdateTime,
+	// 		e.Metadata.IsDeleted)
+	// }
 }
 
 func registerGlobalFlags(fset *flag.FlagSet) {
