@@ -10,9 +10,9 @@ type OidType int
 const (
 	OidVersionV01 = 0x01
 
-	OidTypeRawData   = 0x00
-	OidTypeChunkSet  = 0x01
-	OidTypeObjectSet = 0x02
+	OidTypeRawData   = 0x00 // Raw data. Replicated on select nodes in a swarm via consistent hashing approach.
+	OidTypeChunkSet  = 0x01 // Chunkset. Replicated on every node in a swarm.
+	OidTypeObjectSet = 0x02 // Objectset. Replicated on every node in a swarm.
 
 	OidPaddingByte = 0xAA
 )
