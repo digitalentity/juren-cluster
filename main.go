@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"flag"
 	"juren/commands"
 	"juren/config"
 	"juren/datastore/block"
 	"juren/oid"
+	"juren/swarm/client"
+	"juren/swarm/protocol"
+	"juren/swarm/server"
 	"os"
+	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,49 +32,111 @@ func RunPublish(ctx context.Context, cfg *config.Config) {
 	log.Infof("Publishing ipfs-go-storage...")
 }
 
+type blockIndex struct {
+}
+
+func (b *blockIndex) GetByOid(oid.Oid) (*block.MetadataWithSeq, error) {
+	return nil, errors.ErrUnsupported
+}
+
+func (b *blockIndex) GetBySeq(uint64) (*block.MetadataWithSeq, error) {
+	return nil, errors.ErrUnsupported
+}
+
+func (b *blockIndex) Put(oid.Oid, *block.MetadataWithSeq) (*block.MetadataWithSeq, error) {
+	return nil, errors.ErrUnsupported
+}
+
+func (b *blockIndex) EnumerateBySeq(uint64, uint64) ([]*block.MetadataWithSeq, error) {
+	bl := []*block.MetadataWithSeq{
+		{
+			Sequence: 1,
+			Metadata: &block.Metadata{
+				Oid:        *oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQAXT"),
+				Length:     10,
+				UpdateTime: time.Now(),
+				IsDeleted:  false,
+			},
+		},
+	}
+	return bl, nil
+}
+
 func RunTest(ctx context.Context, cfg *config.Config) {
 	log.Infof("Running test for ipfs-go-storage...")
 
-	testString := "/Anime/Boku no Pico/[RAW]/Boku no Pico - 01 (v2) [720p].mkv"
-	sha256Hash := sha256.Sum256([]byte(testString))
+	// testString := "/Anime/Boku no Pico/[RAW]/Boku no Pico - 01 (v2) [720p].mkv"
+	// sha256Hash := sha256.Sum256([]byte(testString))
 
-	o, err := oid.Encode(oid.OidTypeRawData, sha256Hash)
+	// o, err := oid.Encode(oid.OidTypeRawBlock, sha256Hash)
+	// if err != nil {
+	// 	log.Fatalf("Failed to encode OID: %v", err)
+	// }
+
+	// log.Infof("Encoded OID: %s", o.String())
+
+	// o2, err := oid.FromString(o.String())
+	// if err != nil {
+	// 	log.Fatalf("Failed to decode OID: %v", err)
+	// }
+
+	// log.Infof("Decoded OID: %s, type: %d", o2.String(), o2.Type())
+
+	// b, err := cbor.Marshal(o)
+	// if err != nil {
+	// 	log.Fatalf("Failed to encode OID to CBOR: %v", err)
+	// }
+	// log.Infof("CBOR encoded OID: %s", hex.EncodeToString(b))
+
+	// o3 := &oid.Oid{}
+	// if err := cbor.Unmarshal(b, o3); err != nil {
+	// 	log.Fatalf("Failed to decode CBOR OID: %v", err)
+	// }
+	// log.Infof("Decoded CBOR OID: %s, type: %d", o3.String(), o3.Type())
+
+	// blk := &block.Block{
+	// 	Oid:    *o,
+	// 	Length: uint64(len(testString)),
+	// }
+
+	// b, err = cbor.Marshal(blk)
+	// if err != nil {
+	// 	log.Fatalf("Failed to encode Block to CBOR: %v", err)
+	// }
+	// log.Infof("CBOR encoded Block: %s", hex.EncodeToString(b))
+
+	nodeID, err := oid.Encode(oid.OidTypeNode, sha256.Sum256([]byte("TestNode")))
 	if err != nil {
 		log.Fatalf("Failed to encode OID: %v", err)
 	}
+	log.Infof("NodeID: %s", nodeID.String())
 
-	log.Infof("Encoded OID: %s", o.String())
+	srv := server.NewServer(*nodeID, &blockIndex{})
+	srv.Serve(ctx)
 
-	o2, err := oid.FromString(o.String())
+	time.Sleep(1 * time.Second)
+
+	client, err := client.Dial("localhost:5001")
 	if err != nil {
-		log.Fatalf("Failed to decode OID: %v", err)
+		log.Fatalf("Failed to create RPC client: %v", err)
 	}
 
-	log.Infof("Decoded OID: %s, type: %d", o2.String(), o2.Type())
+	req := &protocol.PeerSyncRequest{
+		NodeID:         *nodeID,
+		SequenceNumber: 0,
+		BatchSize:      10,
+	}
 
-	b, err := cbor.Marshal(o)
+	res, err := client.PeerSync(req)
 	if err != nil {
-		log.Fatalf("Failed to encode OID to CBOR: %v", err)
-	}
-	log.Infof("CBOR encoded OID: %s", hex.EncodeToString(b))
-
-	o3 := &oid.Oid{}
-	if err := cbor.Unmarshal(b, o3); err != nil {
-		log.Fatalf("Failed to decode CBOR OID: %v", err)
-	}
-	log.Infof("Decoded CBOR OID: %s, type: %d", o3.String(), o3.Type())
-
-	blk := &block.Block{
-		Oid:    *o,
-		Length: uint64(len(testString)),
+		log.Fatalf("Failed to call PeerSync: %v", err)
 	}
 
-	b, err = cbor.Marshal(blk)
-	if err != nil {
-		log.Fatalf("Failed to encode Block to CBOR: %v", err)
+	log.Infof("Response from %s, entries: %d", res.NodeID.String(), len(res.Entries))
+	for _, e := range res.Entries {
+		log.Infof("Entry: seq=%d, oid=%s, length=%d, time=%s, deleted=%t", e.Sequence, e.Metadata.Oid.String(), e.Metadata.Length, e.Metadata.UpdateTime,
+			e.Metadata.IsDeleted)
 	}
-	log.Infof("CBOR encoded Block: %s", hex.EncodeToString(b))
-
 }
 
 func registerGlobalFlags(fset *flag.FlagSet) {
@@ -86,7 +151,7 @@ func main() {
 	defer cancel()
 
 	configFile := flag.String("config", "/tmp/juren-cluster/config.json", "Path to config file")
-	logLevel := flag.String("loglevel", "info", "Log level")
+	logLevel := flag.String("loglevel", "debug", "Log level")
 
 	initCmd := flag.NewFlagSet("init", flag.ExitOnError)
 	registerGlobalFlags(initCmd)

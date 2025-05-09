@@ -3,6 +3,7 @@ package oid
 import (
 	"encoding/base32"
 	"errors"
+	"log"
 )
 
 type OidType int
@@ -10,9 +11,10 @@ type OidType int
 const (
 	OidVersionV01 = 0x01
 
-	OidTypeRawData   = 0x00 // Raw data. Replicated on select nodes in a swarm via consistent hashing approach.
-	OidTypeChunkSet  = 0x01 // Chunkset. Replicated on every node in a swarm.
+	OidTypeRawBlock  = 0x00 // Raw data. Replicated on select nodes in a swarm via consistent hashing approach.
+	OidTypeObject    = 0x01 // Chunkset. Replicated on every node in a swarm.
 	OidTypeObjectSet = 0x02 // Objectset. Replicated on every node in a swarm.
+	OidTypeNode      = 0x03
 
 	OidPaddingByte = 0xAA
 )
@@ -95,4 +97,12 @@ func FromString(s string) (*Oid, error) {
 		return nil, err
 	}
 	return o, nil
+}
+
+func FromStringMustParse(s string) *Oid {
+	o, err := FromString(s)
+	if err != nil {
+		log.Fatalf("Failed to parse OID: %v", err)
+	}
+	return o
 }
