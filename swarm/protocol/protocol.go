@@ -24,11 +24,11 @@ type PeerSyncResponse struct {
 	Entries []*block.MetadataWithSeq `cbor:"2,keyasint,omitempty"`
 }
 
-type BlockFetchRequest struct {
+type BlockGetRequest struct {
 	Oid oid.Oid `cbor:"1,keyasint,omitempty"` // OID of the Block`
 }
 
-type BlockFetchResponse struct {
+type BlockGetResponse struct {
 	Block *block.Block `cbor:"1,keyasint,omitempty"` // Requested Block
 }
 

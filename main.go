@@ -58,6 +58,23 @@ func (b *blockIndex) EnumerateBySeq(uint64, uint64) ([]*block.MetadataWithSeq, e
 				IsDeleted:  false,
 			},
 		},
+		{Sequence: 2,
+			Metadata: &block.Metadata{
+				Oid:        *oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQAXU"),
+				Length:     20,
+				UpdateTime: time.Now(),
+				IsDeleted:  false,
+			},
+		},
+		{
+			Sequence: 3,
+			Metadata: &block.Metadata{
+				Oid:        *oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQAXV"),
+				Length:     30,
+				UpdateTime: time.Now(),
+				IsDeleted:  true,
+			},
+		},
 	}
 	return bl, nil
 }
@@ -127,7 +144,8 @@ func RunTest(ctx context.Context, cfg *config.Config) {
 		BatchSize:      10,
 	}
 
-	res, err := client.PeerSync(req)
+	cctx, _ := context.WithTimeout(ctx, 1*time.Second)
+	res, err := client.PeerSync(cctx, req)
 	if err != nil {
 		log.Fatalf("Failed to call PeerSync: %v", err)
 	}

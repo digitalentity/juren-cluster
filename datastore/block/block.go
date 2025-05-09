@@ -7,23 +7,22 @@ import (
 
 // OID of a BLOCK is identified by the blocks content
 type Block struct {
-	Oid    oid.Oid `cbor:"1,keyasint"`
-	Length uint64  `cbor:"2,keyasint,omitempty"`
-	Data   []byte  `cbor:"3,keyasint,omitempty"`
+	_      struct{} `cbor:",toarray"` // This is compact, but doesn't retain the field structure
+	Oid    oid.Oid
+	Length uint64
+	Data   []byte
 }
 
 type Metadata struct {
-	_          struct{} `cbor:",toarray"`
-	Oid        oid.Oid
-	Length     uint64
-	UpdateTime time.Time
-	IsDeleted  bool
+	Oid        oid.Oid   `cbor:"1,keyasint"`
+	Length     uint64    `cbor:"2,keyasint,omitempty"`
+	UpdateTime time.Time `cbor:"3,keyasint,omitempty"`
+	IsDeleted  bool      `cbor:"4,keyasint,omitempty"`
 }
 
 type MetadataWithSeq struct {
-	_        struct{} `cbor:",toarray"`
-	Sequence uint64
-	Metadata *Metadata
+	Sequence uint64    `cbor:"1,keyasint"`
+	Metadata *Metadata `cbor:"2,keyasint"`
 }
 
 type BlockStore interface {

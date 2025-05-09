@@ -1,4 +1,4 @@
-package cborrpc
+package cborcodec
 
 // Original implementation Copyright (c) 2022 Lukas Zapletal
 // https://github.com/lzap/cborpc
@@ -86,8 +86,6 @@ func readAny(reader io.Reader, payload any) error {
 	if err != nil {
 		return fmt.Errorf("payload unmarshal error: %w", err)
 	}
-
-	fmt.Printf("readAny (%d bytes): %T: %v\n", length, payload, payload)
 
 	return nil
 }

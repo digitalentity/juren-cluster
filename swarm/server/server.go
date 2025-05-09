@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"juren/datastore/block"
 	"juren/net/cborrpc"
 	"juren/oid"
@@ -15,9 +16,9 @@ import (
 var log = logrus.New()
 
 type Server struct {
+	rpc.Server
 	nodeID      oid.Oid          // Node ID
 	index       block.BlockIndex // Block Index Storage
-	server      *rpc.Server      // RPC Server instance
 	rpcListener net.Listener
 }
 
@@ -31,29 +32,15 @@ func NewServer(nodeID oid.Oid, index block.BlockIndex) *Server {
 		nodeID:      nodeID,
 		index:       index,
 		rpcListener: l,
-		server:      rpc.NewServer(),
 	}
 
-	srv.server.Register(srv)
-
+	srv.Register(srv)
 	return srv
-}
-
-func (s *Server) serve(ctx context.Context) error {
-	for {
-		conn, err := s.rpcListener.Accept()
-		log.Infof("Accepted connection from %s", conn.RemoteAddr().String())
-		if err != nil {
-			log.Errorf("Failed to accept connection: %v", err)
-			continue
-		}
-		go s.server.ServeCodec(cborrpc.NewCBORServerCodec(conn))
-	}
 }
 
 func (s *Server) Serve(ctx context.Context) error {
 	log.Info("Starting RPC server...")
-	go s.serve(ctx)
+	go cborrpc.Serve(s.rpcListener, s)
 	return nil
 }
 
@@ -67,4 +54,16 @@ func (s *Server) PeerSync(req *protocol.PeerSyncRequest, res *protocol.PeerSyncR
 	res.NodeID = s.nodeID
 	res.Entries = blocks
 	return nil
+}
+
+// RPC: BlockFetch
+func (s *Server) BlockGet(req *protocol.BlockGetRequest, res *protocol.BlockGetResponse) error {
+	log.Infof("Received BlockFetch for %s", req.Oid.String())
+	return errors.ErrUnsupported
+}
+
+// RPC: BlockPut
+func (s *Server) BlockPut(req *protocol.BlockPutRequest, res *protocol.BlockPutResponse) error {
+	log.Infof("Received BlockPut for %s", req.Block.Oid.String())
+	return errors.ErrUnsupported
 }
