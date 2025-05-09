@@ -8,12 +8,10 @@ import (
 	"juren/commands"
 	"juren/config"
 	"juren/datastore/block"
-	"juren/net/cborrpc"
 	"juren/oid"
+	"juren/swarm/client"
 	"juren/swarm/protocol"
 	"juren/swarm/server"
-	"net"
-	"net/rpc"
 	"os"
 	"time"
 
@@ -118,23 +116,20 @@ func RunTest(ctx context.Context, cfg *config.Config) {
 
 	time.Sleep(1 * time.Second)
 
-	conn, err := net.Dial("tcp", "localhost:5001")
+	client, err := client.Dial("localhost:5001")
 	if err != nil {
-		log.Fatalf("Failed to dial RPC server: %v", err)
+		log.Fatalf("Failed to create RPC client: %v", err)
 	}
 
-	// client, err := rpc.DialHTTP("tcp", "localhost:5001")
-	client := rpc.NewClientWithCodec(cborrpc.NewCBORClientCodec(conn))
 	req := &protocol.PeerSyncRequest{
 		NodeID:         *nodeID,
 		SequenceNumber: 0,
 		BatchSize:      10,
 	}
-	res := &protocol.PeerSyncResponse{}
 
-	err = client.Call("Server.PeerSync", req, res)
+	res, err := client.PeerSync(req)
 	if err != nil {
-		log.Fatalf("Failed to call RPC method: %v", err)
+		log.Fatalf("Failed to call PeerSync: %v", err)
 	}
 
 	log.Infof("Response from %s, entries: %d", res.NodeID.String(), len(res.Entries))

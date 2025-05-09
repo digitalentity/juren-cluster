@@ -1,5 +1,8 @@
 package cborrpc
 
+// Original implementation Copyright (c) 2022 Lukas Zapletal
+// https://github.com/lzap/cborpc
+
 import (
 	"bufio"
 	"io"
