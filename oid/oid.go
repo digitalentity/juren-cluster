@@ -3,7 +3,8 @@ package oid
 import (
 	"encoding/base32"
 	"errors"
-	"log"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type OidType int

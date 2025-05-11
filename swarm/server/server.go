@@ -10,10 +10,8 @@ import (
 	"net"
 	"net/rpc"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
-
-var log = logrus.New()
 
 type Server struct {
 	rpc.Server

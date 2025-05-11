@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/rpc"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type ServerInterface interface {

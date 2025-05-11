@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
-
-var log = logrus.New()
 
 // Config represents the configuration for the ipfs-go-storage application
 type Config struct {

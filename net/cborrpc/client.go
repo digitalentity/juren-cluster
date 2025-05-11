@@ -5,6 +5,8 @@ import (
 	"juren/net/cborcodec"
 	"net"
 	"net/rpc"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Client struct {
@@ -12,6 +14,7 @@ type Client struct {
 }
 
 func DialCBOR(address string) (*Client, error) {
+	log.Debugf("Dialing %s", address)
 	conn, err := net.DialTimeout("tcp", address, DialTimeout)
 	if err != nil {
 		return nil, err
