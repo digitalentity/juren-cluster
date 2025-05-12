@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -140,12 +141,27 @@ func suitableMethods(typ reflect.Type) map[string]*methodType {
 }
 
 func (srv *Server) Serve(l net.Listener) error {
+	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
-		conn, err := l.Accept()
+		rw, err := l.Accept()
+		log.Infof("Accepted connection from %s", rw.RemoteAddr().String())
 		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				if tempDelay == 0 {
+					tempDelay = 5 * time.Millisecond
+				} else {
+					tempDelay *= 2
+				}
+				if max := 1 * time.Second; tempDelay > max {
+					tempDelay = max
+				}
+				log.Errorf("CBOR-RPC: Accept error: %v; retrying in %v", err, tempDelay)
+				time.Sleep(tempDelay)
+				continue
+			}
 			return err
 		}
-		go srv.serveConn(conn)
+		go srv.serveConn(rw)
 	}
 }
 

@@ -2,20 +2,12 @@ package client
 
 import (
 	"context"
-	"juren/net/cborrpc"
+	"juren/net/crpc"
 	"juren/swarm/protocol"
 )
 
 type Client struct {
-	*cborrpc.Client
-}
-
-func Dial(address string) (*Client, error) {
-	c, err := cborrpc.DialCBOR(address)
-	if err != nil {
-		return nil, err
-	}
-	return &Client{c}, nil
+	*crpc.Client
 }
 
 func (c *Client) PeerSync(ctx context.Context, req *protocol.PeerSyncRequest) (*protocol.PeerSyncResponse, error) {

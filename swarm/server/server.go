@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"juren/datastore/block"
-	"juren/net/cborrpc"
+	"juren/net/crpc"
 	"juren/oid"
 	"juren/swarm/protocol"
 	"net"
-	"net/rpc"
 
 	log "github.com/sirupsen/logrus"
 )
 
 type Server struct {
-	rpc.Server
+	crpc.Server
 	nodeID      oid.Oid          // Node ID
 	index       block.BlockIndex // Block Index Storage
 	rpcListener net.Listener
@@ -38,7 +37,7 @@ func NewServer(nodeID oid.Oid, index block.BlockIndex) *Server {
 
 func (s *Server) Serve(ctx context.Context) error {
 	log.Info("Starting RPC server...")
-	go cborrpc.Serve(s.rpcListener, s)
+	go s.Server.Serve(s.rpcListener)
 	return nil
 }
 
