@@ -9,7 +9,7 @@ var ()
 
 type PeerAnnouncementMessage struct {
 	NodeID         oid.Oid `cbor:"1,keyasint,omitempty"` // Node identifier
-	Port           uint16  `cbor:"2,keyasint,omitempty"` // RPC port on which the Node Server is listening
+	Address        string  `cbor:"2,keyasint,omitempty"` // Node network address and port
 	SequenceNumber uint64  `cbor:"3,keyasint,omitempty"` // Local Block Index sequence number
 }
 

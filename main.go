@@ -9,6 +9,7 @@ import (
 	"juren/config"
 	"juren/datastore/block"
 	"juren/net/crpc"
+	"juren/net/mpubsub"
 	"juren/oid"
 	"juren/swarm/protocol"
 	"net"
@@ -85,8 +86,52 @@ func (d *DemoServer) PeerSync(req *protocol.PeerSyncRequest, res *protocol.PeerS
 	return errors.ErrUnsupported
 }
 
+func (d *DemoServer) PeerAnnouncement(msg *protocol.PeerAnnouncementMessage) {
+	log.Infof("Received PeerAnnouncement from %s, addr: %s, seq: %d", msg.NodeID.String(), msg.Address, msg.SequenceNumber)
+}
+
 func RunTest(ctx context.Context, cfg *config.Config) {
 	log.Infof("Running test for ipfs-go-storage...")
+
+	groupAddr, err := net.ResolveUDPAddr("udp", "224.0.0.1:9999")
+	if err != nil {
+		log.Fatalf("Failed to resolve UDP address: %v", err)
+	}
+
+	rc, err := net.ListenMulticastUDP("udp", nil, groupAddr)
+	if err != nil {
+		log.Fatalf("Failed to listen on UDP: %v", err)
+	}
+
+	wc, err := net.DialUDP("udp", nil, groupAddr)
+	if err != nil {
+		log.Fatalf("Failed to dial UDP: %v", err)
+	}
+
+	pubsub := mpubsub.New(rc, wc)
+
+	pubsub.Subscribe(&DemoServer{})
+
+	go pubsub.Listen()
+
+	time.Sleep(1 * time.Second)
+
+	msg := &protocol.PeerAnnouncementMessage{
+		NodeID:         *oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQAXT"),
+		Address:        "127.0.0.1:5001",
+		SequenceNumber: 0,
+	}
+	// msg := &protocol.PeerSyncRequest{
+	// 	NodeID:         *oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQAXT"),
+	// 	SequenceNumber: 0,
+	// 	BatchSize:      10,
+	// }
+
+	err = pubsub.Publish("DemoServer.PeerAnnouncement", msg)
+
+	time.Sleep(1 * time.Second)
+
+	return
 
 	// testString := "/Anime/Boku no Pico/[RAW]/Boku no Pico - 01 (v2) [720p].mkv"
 	// sha256Hash := sha256.Sum256([]byte(testString))

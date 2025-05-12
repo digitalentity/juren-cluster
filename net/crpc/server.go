@@ -58,15 +58,7 @@ func (srv *Server) Register(rcvr any) error {
 	// Install the methods
 	s.method = suitableMethods(s.typ)
 	if len(s.method) == 0 {
-		str := ""
-
-		// To help the user, see if a pointer receiver would work.
-		method := suitableMethods(reflect.PointerTo(s.typ))
-		if len(method) != 0 {
-			str = "rpc.Register: type " + sname + " has no exported methods of suitable type (hint: pass a pointer to value of that type)"
-		} else {
-			str = "rpc.Register: type " + sname + " has no exported methods of suitable type"
-		}
+		str := "rpc.Register: type " + sname + " has no exported methods of suitable type"
 		log.Error(str)
 		return errors.New(str)
 	}
