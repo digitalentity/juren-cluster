@@ -31,6 +31,7 @@ type BlockStore interface {
 	Has(*oid.Oid) (bool, error)
 	Put(*Block) (*oid.Oid, error)
 	Delete(*oid.Oid) error
+	Enumerate() ([]*oid.Oid, error)
 	Close() error
 }
 
@@ -44,6 +45,12 @@ type BlockIndex interface {
 	// Stores a Metadata entry in the Index Storage. Updates the Sequence Number if entry is different from an existing one.
 	Put(*oid.Oid, *MetadataWithSeq) (*MetadataWithSeq, error)
 
+	// Has
+	Has(*oid.Oid) (bool, error)
+
 	// Enumerates the blocks with the Seqence Number in the given range (inclusive)
 	EnumerateBySeq(uint64, uint64) ([]*MetadataWithSeq, error)
+
+	// Close
+	Close() error
 }
