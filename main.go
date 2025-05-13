@@ -16,6 +16,8 @@ import (
 	"os"
 	"time"
 
+	ldb "juren/datastore/leveldb"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -92,6 +94,37 @@ func (d *DemoServer) PeerAnnouncement(msg *protocol.PeerAnnouncementMessage) {
 
 func RunTest(ctx context.Context, cfg *config.Config) {
 	log.Infof("Running test for ipfs-go-storage...")
+
+	idx, err := ldb.New("/tmp/juren-cluster/leveldb")
+	if err != nil {
+		log.Fatalf("Failed to create LevelDB: %v", err)
+	}
+
+	log.Infof("LevelDB SEQ: %d", idx.GetSeq())
+
+	// o := oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQAXT")
+	// blk := &block.MetadataWithSeq{
+	// 	Metadata: &block.Metadata{
+	// 		Oid:        *o,
+	// 		Length:     10,
+	// 		UpdateTime: time.Now(),
+	// 		IsDeleted:  false,
+	// 	},
+	// }
+
+	// md, err := idx.Put(blk)
+	// if err != nil {
+	// 	log.Fatalf("Failed to put metadata: %v", err)
+	// }
+	md, err := idx.EnumerateBySeq(0, 100)
+	if err != nil {
+		log.Fatalf("Failed to get metadata: %v", err)
+	}
+	for _, e := range md {
+		log.Infof("Put metadata: %s, seq: %d", e.Metadata.Oid.String(), e.Sequence)
+	}
+
+	return
 
 	groupAddr, err := net.ResolveUDPAddr("udp", "224.0.0.1:9999")
 	if err != nil {
