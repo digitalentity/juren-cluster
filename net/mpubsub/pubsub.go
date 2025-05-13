@@ -17,7 +17,7 @@ import (
 )
 
 type MessageHeader struct {
-	ServiceMethod string `cbor:"0,keyasint,omitempty"`
+	ServiceMethod string `cbor:"1,keyasint,omitempty"`
 }
 
 type handlerType struct {
@@ -51,13 +51,11 @@ func (ps *PubSub) Subscribe(rcvr any) {
 	s.sub = reflect.ValueOf(rcvr)
 	sname := reflect.Indirect(s.sub).Type().Name()
 	if sname == "" {
-		s := "mpubsub.Subscribe: no service name for type" + s.typ.String()
-		log.Errorf(s)
+		log.Errorf("mpubsub.Subscribe: no service name for type %s", s.typ.String())
 		return
 	}
 	if !token.IsExported(sname) {
-		s := "mpubsub.Subscribe: type " + sname + " is not exported"
-		log.Errorf(s)
+		log.Errorf("mpubsub.Subscribe: type %q is not exported", sname)
 		return
 	}
 	s.name = sname

@@ -27,20 +27,22 @@ type MetadataWithSeq struct {
 
 type BlockStore interface {
 	// Block Storage operations
-	Get(oid.Oid) (*Block, error)
-	Put(*Block) (oid.Oid, error)
-	Delete(oid.Oid) error
+	Get(*oid.Oid) (*Block, error)
+	Has(*oid.Oid) (bool, error)
+	Put(*Block) (*oid.Oid, error)
+	Delete(*oid.Oid) error
+	Close() error
 }
 
 type BlockIndex interface {
 	// Fetches a Metadata entry with a given OID
-	GetByOid(oid.Oid) (*MetadataWithSeq, error)
+	GetByOid(*oid.Oid) (*MetadataWithSeq, error)
 
 	// Fetches a Metadata entry with a given _local_ Sequence Number
 	GetBySeq(uint64) (*MetadataWithSeq, error)
 
 	// Stores a Metadata entry in the Index Storage. Updates the Sequence Number if entry is different from an existing one.
-	Put(oid.Oid, *MetadataWithSeq) (*MetadataWithSeq, error)
+	Put(*oid.Oid, *MetadataWithSeq) (*MetadataWithSeq, error)
 
 	// Enumerates the blocks with the Seqence Number in the given range (inclusive)
 	EnumerateBySeq(uint64, uint64) ([]*MetadataWithSeq, error)
