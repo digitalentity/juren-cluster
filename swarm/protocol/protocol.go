@@ -7,9 +7,9 @@ import (
 
 // PeerAnnouncementMessage is broadcast by a Node to announce its presence, RPC address and Local Block Index sequence.
 type PeerAnnouncementMessage struct {
-	NodeID         oid.Oid `cbor:"1,keyasint,omitempty"` // Node identifier
-	Address        string  `cbor:"2,keyasint,omitempty"` // Node network address and port
-	SequenceNumber uint64  `cbor:"3,keyasint,omitempty"` // Local Block Index sequence number
+	NodeID         oid.Oid  `cbor:"1,keyasint,omitempty"` // Node identifier
+	Addresses      []string `cbor:"2,keyasint,omitempty"` // Node network address and port
+	SequenceNumber uint64   `cbor:"3,keyasint,omitempty"` // Local Block Index sequence number
 }
 
 // BlockAnnouncementMessage is broadcast by a Node to announce presence of the block in local storage.

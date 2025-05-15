@@ -21,19 +21,19 @@ const (
 var _ block.BlockIndex = (*BlockIndex)(nil)
 
 type BlockIndex struct {
-	*LebelDB
+	LebelDB
 	seq uint64
 }
 
 func NewBlockIndex(path string) (*BlockIndex, error) {
 	// Init the underlyiung LevelDB object
-	ldb, err := New(path)
+	ldb, err := initLevelDb(path)
 	if err != nil {
 		return nil, err
 	}
 
 	// Scan the database to identify the sequence
-	iter := ldb.db.NewIterator(util.BytesPrefix([]byte(keyPrefixSeq)), nil)
+	iter := ldb.NewIterator(util.BytesPrefix([]byte(keyPrefixSeq)), nil)
 	defer iter.Release()
 
 	var maxSeq uint64 = 0
@@ -46,7 +46,13 @@ func NewBlockIndex(path string) (*BlockIndex, error) {
 		maxSeq = seq
 	}
 
-	return &BlockIndex{LebelDB: ldb, seq: maxSeq}, nil
+	return &BlockIndex{
+		LebelDB: LebelDB{
+			path: path,
+			db:   ldb,
+		},
+		seq: maxSeq,
+	}, nil
 }
 
 func (l *BlockIndex) GetByOid(oid *oid.Oid) (*block.ExtendedMedatadata, error) {
@@ -54,13 +60,17 @@ func (l *BlockIndex) GetByOid(oid *oid.Oid) (*block.ExtendedMedatadata, error) {
 	defer l.mu.Unlock()
 
 	// Fetch the object
-	v, err := l.getByKey(keyFromOid(oid), &block.ExtendedMedatadata{})
+	raw, err := l.db.Get(keyFromOid(oid), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Cast to the expected type
-	md := v.(*block.ExtendedMedatadata)
+	// Unmarshall CBOR
+	md := &block.ExtendedMedatadata{}
+	err = cbor.Unmarshal(raw, md)
+	if err != nil {
+		return nil, err
+	}
 
 	// Compare the OID just in case
 	if md.Metadata.Oid != *oid {
@@ -76,13 +86,17 @@ func (l *BlockIndex) GetBySeq(seq uint64) (*block.ExtendedMedatadata, error) {
 	defer l.mu.Unlock()
 
 	// Fetch the object
-	v, err := l.getByKey(keyFromSeq(seq), &block.ExtendedMedatadata{})
+	raw, err := l.db.Get(keyFromSeq(seq), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Cast to the expected type
-	md := v.(*block.ExtendedMedatadata)
+	// Unmarshall CBOR
+	md := &block.ExtendedMedatadata{}
+	err = cbor.Unmarshal(raw, md)
+	if err != nil {
+		return nil, err
+	}
 
 	// Compare the Sequence Number just in case
 	if md.Sequence != seq {
@@ -100,19 +114,19 @@ func (l *BlockIndex) Put(metadata *block.ExtendedMedatadata) (*block.ExtendedMed
 	// Fetch the existing metadata block
 	oid := &metadata.Metadata.Oid
 
-	v, err := l.getByKey(keyFromOid(oid), &block.ExtendedMedatadata{})
+	// Generic fetch and unmarshall
+	raw, err := l.db.Get(keyFromOid(oid), nil)
 	if err != nil && err != errors.ErrNotFound {
-		// ErrNotFound is acceptable here, everything else is not.
 		return nil, err
 	}
 
-	// Cast to the correct type
-	existing := v.(*block.ExtendedMedatadata)
-
-	// Compare the metadata (not the seqeuence number)
-	if existing != nil && block.IsMetadataEqual(existing.Metadata, metadata.Metadata) {
-		log.Debugf("Put: Metadata for OID %s is unchanged, skipping update", oid.String())
-		return existing, nil
+	if err == nil {
+		existing := &block.ExtendedMedatadata{}
+		err = cbor.Unmarshal(raw, existing)
+		if err == nil && block.IsMetadataEqual(existing.Metadata, metadata.Metadata) {
+			log.Debugf("Put: Metadata for OID %s is unchanged, skipping update", oid.String())
+			return existing, nil
+		}
 	}
 
 	// Create the new sequence number
@@ -125,7 +139,7 @@ func (l *BlockIndex) Put(metadata *block.ExtendedMedatadata) (*block.ExtendedMed
 	}
 
 	// Marshall Metadata to CBOR
-	raw, err := cbor.Marshal(md)
+	raw, err = cbor.Marshal(md)
 	if err != nil {
 		return nil, err
 	}

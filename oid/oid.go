@@ -1,7 +1,9 @@
 package oid
 
 import (
+	"crypto/rand"
 	"encoding/base32"
+	"encoding/json"
 	"errors"
 
 	log "github.com/sirupsen/logrus"
@@ -70,6 +72,24 @@ func (o *Oid) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
+func (o *Oid) MarshalJSON() ([]byte, error) {
+	return json.Marshal(o.String())
+}
+
+func (o *Oid) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	oid, err := FromString(s)
+	if err != nil {
+		return err
+	}
+	*o = *oid
+	return nil
+}
+
 func Encode(t OidType, hash [32]byte) (*Oid, error) {
 	oidbytes := []byte{}
 
@@ -106,4 +126,20 @@ func FromStringMustParse(s string) *Oid {
 		log.Fatalf("Failed to parse OID: %v", err)
 	}
 	return o
+}
+
+func Random(t OidType) (*Oid, error) {
+	// Generate 32 random bytes and craft a OID
+	buf := make([]byte, 32)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	oid, err := Encode(t, [32]byte(buf))
+	if err != nil {
+		return nil, err
+	}
+
+	return oid, nil
 }

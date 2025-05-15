@@ -1,11 +1,13 @@
 package crpc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"go/token"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,11 +33,14 @@ type service struct {
 }
 
 type Server struct {
+	listener   net.Listener
 	serviceMap sync.Map // map[string]*service
 }
 
-func NewServer() *Server {
-	return &Server{}
+func NewServer(listener net.Listener) *Server {
+	return &Server{
+		listener: listener,
+	}
 }
 
 func (srv *Server) Register(rcvr any) error {
@@ -132,10 +137,12 @@ func suitableMethods(typ reflect.Type) map[string]*methodType {
 	return methods
 }
 
-func (srv *Server) Serve(l net.Listener) error {
+// FIXME: Add context handling
+func (srv *Server) Serve(ctx context.Context) error {
+
 	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
-		rw, err := l.Accept()
+		rw, err := srv.listener.Accept()
 		log.Infof("Accepted connection from %s", rw.RemoteAddr().String())
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
@@ -238,4 +245,152 @@ func (svc *service) call(mtype *methodType, argv, replyv reflect.Value) error {
 		return errInter.(error)
 	}
 	return nil
+}
+
+// Addr returns all IP addresses on which the server is listening.
+// If the listener is bound to a specific IP, it returns that IP:port.
+// If the listener is bound to an unspecified IP (e.g., 0.0.0.0 or ::) or an address like ":port",
+// it enumerates IP addresses of active network interfaces and returns them with the listener's port.
+func (srv *Server) Addr() []net.Addr {
+	if srv.listener == nil {
+		log.Error("crpc.Server.Addr: listener is nil")
+		return []net.Addr{}
+	}
+
+	listenerAddr := srv.listener.Addr()
+	if listenerAddr == nil {
+		log.Error("crpc.Server.Addr: listener.Addr() returned nil")
+		return []net.Addr{}
+	}
+
+	var listenIP net.IP
+	var port int
+	var networkType = listenerAddr.Network() // e.g., "tcp", "udp"
+
+	switch a := listenerAddr.(type) {
+	case *net.TCPAddr:
+		listenIP = a.IP
+		port = a.Port
+	case *net.UDPAddr: // Should not happen for crpc, but good for completeness
+		listenIP = a.IP
+		port = a.Port
+	default:
+		hostStr, portStr, err := net.SplitHostPort(listenerAddr.String())
+		if err != nil {
+			log.Errorf("crpc.Server.Addr: failed to parse listener address '%s': %v", listenerAddr.String(), err)
+			return []net.Addr{listenerAddr} // Fallback to returning the original problematic address
+		}
+		p, err := strconv.Atoi(portStr)
+		if err != nil {
+			log.Errorf("crpc.Server.Addr: failed to parse port from listener address '%s': %v", listenerAddr.String(), err)
+			return []net.Addr{listenerAddr}
+		}
+		port = p
+		if hostStr != "" {
+			listenIP = net.ParseIP(hostStr)
+		}
+		// If hostStr was empty (e.g. ":8080"), listenIP remains nil, indicating "any"
+	}
+
+	if port == 0 {
+		log.Errorf("crpc.Server.Addr: could not determine port for listener: %s", listenerAddr.String())
+		return []net.Addr{listenerAddr} // Fallback
+	}
+
+	var addresses []net.Addr
+
+	// IsUnspecified correctly handles nil IPs (it returns false for nil).
+	// So, if listenIP is nil (from ":port") or an unspecified IP (0.0.0.0, ::), this is false.
+	isSpecificIP := listenIP != nil && !listenIP.IsUnspecified()
+
+	if isSpecificIP {
+		// Return the specific address the listener is bound to.
+		// We reconstruct it to ensure it's the correct type, e.g. *net.TCPAddr
+		// based on the original listener's network type.
+		switch networkType {
+		case "tcp", "tcp4", "tcp6":
+			addresses = append(addresses, &net.TCPAddr{IP: listenIP, Port: port})
+		case "udp", "udp4", "udp6": // Unlikely for CRPC but included for robustness
+			addresses = append(addresses, &net.UDPAddr{IP: listenIP, Port: port})
+		default:
+			// Fallback for unknown network types, return the original address
+			log.Warnf("crpc.Server.Addr: unhandled network type '%s' for specific IP, returning original listener address", networkType)
+			addresses = append(addresses, listenerAddr)
+		}
+		return addresses
+	}
+
+	// If listenIP is unspecified (0.0.0.0, ::) or nil (e.g. from ":port"),
+	// iterate over all network interfaces.
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		log.Errorf("crpc.Server.Addr: failed to get network interfaces: %v", err)
+		// Fallback to returning the original "any" address if we can't list interfaces
+		return []net.Addr{listenerAddr}
+	}
+
+	for _, iface := range interfaces {
+		if (iface.Flags & net.FlagUp) == 0 {
+			continue // Interface is down
+		}
+
+		ifaddrs, err := iface.Addrs()
+		if err != nil {
+			log.Warnf("crpc.Server.Addr: could not get addresses for interface %s: %v", iface.Name, err)
+			continue
+		}
+
+		for _, addr := range ifaddrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+
+			if ip == nil || ip.IsUnspecified() { // Also skip unspecified IPs from interfaces themselves
+				continue
+			}
+
+			// For CRPC, we assume TCP.
+			// Filter IP version based on the listener's "any" address type if it was explicit.
+			// If listenIP is nil (from ":port"), we accept both IPv4 and IPv6.
+			isIPv4 := ip.To4() != nil
+			if listenIP != nil { // Original listener was explicit 0.0.0.0 or ::
+				if listenIP.Equal(net.IPv4zero) && !isIPv4 { // Listener was 0.0.0.0, IP is IPv6
+					continue
+				}
+				if listenIP.Equal(net.IPv6unspecified) && isIPv4 { // Listener was ::, IP is IPv4
+					// Note: dual-stack [::] can accept IPv4. This lists interface IPs.
+					// For simplicity, if explicitly [::], we list IPv6 interface IPs.
+					continue
+				}
+			}
+			addresses = append(addresses, &net.TCPAddr{IP: ip, Port: port})
+		}
+	}
+
+	// Deduplicate addresses
+	if len(addresses) > 0 {
+		seen := make(map[string]struct{})
+		uniqueAddresses := make([]net.Addr, 0, len(addresses))
+		for _, addr := range addresses {
+			addrStr := addr.String() // Use string representation for deduplication key
+			if _, exists := seen[addrStr]; !exists {
+				seen[addrStr] = struct{}{}
+				uniqueAddresses = append(uniqueAddresses, addr)
+			}
+		}
+		addresses = uniqueAddresses
+	}
+
+	// If no specific IPs were found for an "any" listener (e.g., no active non-loopback interfaces),
+	// it's more informative to return the original listenerAddr than an empty list.
+	if len(addresses) == 0 && !isSpecificIP {
+		log.Warnf("crpc.Server.Addr: no specific IP addresses found for 'any' listener, returning original listener address: %s", listenerAddr.String())
+		return []net.Addr{listenerAddr}
+	}
+
+	return addresses
 }

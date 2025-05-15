@@ -7,7 +7,7 @@ import (
 
 type Metadata struct {
 	NodeID         oid.Oid   `cbor:"1,keyasint,omitempty"` // Node identifier
-	Address        string    `cbor:"2,keyasint,omitempty"` // Node network address and port
+	Addresses      []string  `cbor:"2,keyasint,omitempty"` // Node network addresses and ports
 	SequenceNumber uint64    `cbor:"3,keyasint,omitempty"` // Local Block Index sequence number we last synched with this node
 	LastSeen       time.Time `cbor:"4,keyasint,omitempty"` // Last time we heard from this node
 }

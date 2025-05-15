@@ -5,6 +5,7 @@ package mpubsub
 
 import (
 	"bytes"
+	"context"
 	"go/token"
 	"net"
 	"reflect"
@@ -45,7 +46,7 @@ func New(rconn *net.UDPConn, wconn *net.UDPConn) *PubSub {
 	}
 }
 
-func (ps *PubSub) Subscribe(rcvr any) {
+func (ps *PubSub) Register(rcvr any) {
 	s := new(service)
 	s.typ = reflect.TypeOf(rcvr)
 	s.sub = reflect.ValueOf(rcvr)
@@ -134,12 +135,13 @@ func (ps *PubSub) Publish(serviceMethod string, args interface{}) error {
 		return err
 	}
 
-	log.Debugf("mpubsub: published message to %s (%d bytes)", serviceMethod, buf.Len())
+	// log.Debugf("mpubsub: published message to %s (%d bytes)", serviceMethod, buf.Len())
 
 	return nil
 }
 
-func (ps *PubSub) Listen() {
+// FIXME: Add context handleing
+func (ps *PubSub) Listen(ctx context.Context) error {
 	buf := make([]byte, 1024)
 	ps.rc.SetReadBuffer(1024)
 	for {
@@ -162,7 +164,7 @@ func (ps *PubSub) Listen() {
 		dot := strings.LastIndex(msg.ServiceMethod, ".")
 		if dot < 0 {
 			log.Errorf("rpc: service/method request ill-formed: %s", msg.ServiceMethod)
-			return
+			continue
 		}
 		serviceName := msg.ServiceMethod[:dot]
 		methodName := msg.ServiceMethod[dot+1:]
@@ -187,9 +189,11 @@ func (ps *PubSub) Listen() {
 			continue
 		}
 
-		log.Debugf("mpubsub: received message for %s", msg.ServiceMethod)
+		// log.Debugf("mpubsub: received message for %s", msg.ServiceMethod)
 
 		function := handler.method.Func
 		function.Call([]reflect.Value{svc.sub, arg})
 	}
+
+	return nil
 }

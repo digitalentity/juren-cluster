@@ -5,7 +5,6 @@ import (
 	"juren/oid"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/util"
 
 	log "github.com/sirupsen/logrus"
@@ -18,17 +17,22 @@ const (
 var _ node.NodeIndex = (*NodeIndex)(nil)
 
 type NodeIndex struct {
-	*LebelDB
+	LebelDB
 }
 
 func NewNodeIndex(path string) (*NodeIndex, error) {
 	// Init the underlying LevelDB object
-	ldb, err := New(path)
+	ldb, err := initLevelDb(path)
 	if err != nil {
 		return nil, err
 	}
 
-	return &NodeIndex{LebelDB: ldb}, nil
+	return &NodeIndex{
+		LebelDB: LebelDB{
+			path: path,
+			db:   ldb,
+		},
+	}, nil
 }
 
 func (l *NodeIndex) Get(oid *oid.Oid) (*node.Metadata, error) {
@@ -36,13 +40,17 @@ func (l *NodeIndex) Get(oid *oid.Oid) (*node.Metadata, error) {
 	defer l.mu.Unlock()
 
 	// Fetch the object
-	v, err := l.getByKey(keyFromOid(oid), &node.Metadata{})
+	raw, err := l.db.Get(keyFromOid(oid), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Cast to the expected type
-	md := v.(*node.Metadata)
+	// Unmarshall CBOR
+	md := &node.Metadata{}
+	err = cbor.Unmarshal(raw, md)
+	if err != nil {
+		return nil, err
+	}
 
 	// Compare the OID just in case
 	if md.NodeID != *oid {
@@ -57,32 +65,13 @@ func (l *NodeIndex) Put(metadata *node.Metadata) (*node.Metadata, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Fetch the existing metadata
-	nodeID := &metadata.NodeID
-
-	v, err := l.getByKey(keyFromOid(nodeID), &node.Metadata{})
-	if err != nil && err != errors.ErrNotFound {
-		// ErrNotFound is acceptable here, everything else is not.
-		return nil, err
-	}
-
-	// Cast to the correct type
-	existing := v.(*node.Metadata)
-
-	// Compare the metadata
-	if existing != nil && *existing == *metadata {
-		log.Debugf("Put: Metadata for NodeID %s is unchanged, skipping update", nodeID.String())
-		return existing, nil
-	}
-
-	// Marshall Metadata to CBOR
 	raw, err := cbor.Marshal(metadata)
 	if err != nil {
 		return nil, err
 	}
 
-	// Write the data
-	err = l.db.Put(keyFromOid(nodeID), raw, nil)
+	// Insert
+	err = l.db.Put(keyFromOid(&metadata.NodeID), raw, nil)
 	if err != nil {
 		return nil, err
 	}

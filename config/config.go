@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"juren/oid"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -12,14 +13,21 @@ type Config struct {
 	// Default config file location
 	configFile string
 
+	// Node
+	Node struct {
+		NodeID *oid.Oid `json:"nodeID"`
+	} `json:"node"`
+
 	// Publisher settings define the IPNS address which will be used to manage the VFS
-	Discovery struct {
-		UseMDNS bool `json:"mdns"`
-	} `json:"discovery"`
+	Network struct {
+		RPCListenAddress       string `json:"rpcListenAddress"`
+		PubSubMulticastAddress string `json:"pubSubMulticastAddress"`
+	} `json:"network"`
 
 	DataStore struct {
-		MetadataPath string `json:"metadata"`
-		BlockPath    string `json:"blocks"`
+		BlockStorePath string `json:"metadata"`
+		BlockIndexPath string `json:"blocks"`
+		NodeIndexPath  string `json:"peers"`
 	} `json:"datastore"`
 }
 
@@ -29,10 +37,19 @@ func NewEmptyConfig(configFile string) *Config {
 
 	cfg.configFile = configFile
 
-	cfg.Discovery.UseMDNS = false
+	// Generate a random Node ID
+	nodeid, err := oid.Random(oid.OidTypeNode)
+	if err != nil {
+		log.Fatalf("Failed to generate Node ID: %v", err)
+	}
+	cfg.Node.NodeID = nodeid
 
-	cfg.DataStore.MetadataPath = "/tmp/juren-cluster/metadata"
-	cfg.DataStore.BlockPath = "/tmp/juren-cluster/blocks"
+	cfg.Network.RPCListenAddress = "0.0.0.0:5001"
+	cfg.Network.PubSubMulticastAddress = "224.0.0.1:5002"
+
+	cfg.DataStore.BlockStorePath = "/tmp/juren-cluster/blocks"
+	cfg.DataStore.BlockIndexPath = "/tmp/juren-cluster/metadata"
+	cfg.DataStore.NodeIndexPath = "/tmp/juren-cluster/peers"
 
 	return cfg
 }
