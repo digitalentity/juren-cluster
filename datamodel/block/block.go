@@ -16,14 +16,16 @@ type Block struct {
 
 type Metadata struct {
 	Oid        oid.Oid   `cbor:"1,keyasint"`
-	Length     uint64    `cbor:"2,keyasint,omitempty"`
-	UpdateTime time.Time `cbor:"3,keyasint,omitempty"`
-	IsDeleted  bool      `cbor:"4,keyasint,omitempty"`
+	Length     uint64    `cbor:"2,keyasint,omitempty"` // Block length
+	UpdateTime time.Time `cbor:"3,keyasint,omitempty"` // Block update time
+	IsDeleted  bool      `cbor:"4,keyasint,omitempty"` // Block is deleted
 }
 
-type MetadataWithSeq struct {
-	Sequence uint64    `cbor:"1,keyasint"`
-	Metadata *Metadata `cbor:"2,keyasint"`
+type ExtendedMedatadata struct {
+	Sequence   uint64           `cbor:"1,keyasint"`           // Sequence number (local)
+	UpdateTime time.Time        `cbor:"2,keyasint,omitempty"` // Update Time (global)
+	Metadata   *Metadata        `cbor:"3,keyasint,omitempty"` // The metadata entry
+	WhoHas     map[oid.Oid]bool `cbor:"4,keyasint,omitempty"` // IDs of nodes that have this block
 }
 
 // BlockStore defines the interface for storing and retrieving blocks of data.
@@ -47,9 +49,6 @@ type BlockStore interface {
 	// Enumerate returns a list of OIDs for all blocks currently in the store.
 	// It returns an error if an issue occurs during enumeration.
 	Enumerate() ([]*oid.Oid, error)
-
-	// Close releases any resources held by the BlockStore.
-	Close() error
 }
 
 // BlockIndex defines the interface for managing metadata about blocks.
@@ -59,19 +58,19 @@ type BlockIndex interface {
 	// GetByOid retrieves the metadata (including its sequence number) for a block,
 	// given the block's OID.
 	// It returns a MetadataWithSeq object if found, or an error if the OID does not exist or an issue occurs.
-	GetByOid(*oid.Oid) (*MetadataWithSeq, error)
+	GetByOid(*oid.Oid) (*ExtendedMedatadata, error)
 
 	// GetBySeq retrieves the metadata (including its OID) for a block,
 	// given its local sequence number.
 	// It returns a MetadataWithSeq object if found, or an error if the sequence number does not exist or an issue occurs.
-	GetBySeq(uint64) (*MetadataWithSeq, error)
+	GetBySeq(uint64) (*ExtendedMedatadata, error)
 
 	// Put stores or updates a block's metadata in the index.
 	// If metadata for the given OID already exists and is identical, the operation might be a no-op, returning the existing entry.
 	// Otherwise, it assigns a new, unique sequence number (typically by incrementing the current highest sequence number)
 	// and stores the metadata.
 	// It returns the stored or existing MetadataWithSeq (with its assigned sequence number) and an error if the operation fails.
-	Put(*MetadataWithSeq) (*MetadataWithSeq, error)
+	Put(*ExtendedMedatadata) (*ExtendedMedatadata, error)
 
 	// Has checks if metadata for a block with the given OID exists in the index.
 	// It returns true if the metadata exists, false otherwise, and an error if an issue occurs during the check.
@@ -80,14 +79,11 @@ type BlockIndex interface {
 	// EnumerateBySeq retrieves a list of metadata entries whose sequence numbers fall within the specified range (inclusive).
 	// This is useful for fetching a batch of changes or synchronizing data since a certain point.
 	// It returns a slice of MetadataWithSeq objects and an error if the enumeration fails or the range is invalid.
-	EnumerateBySeq(uint64, uint64) ([]*MetadataWithSeq, error)
+	EnumerateBySeq(uint64, uint64) ([]*ExtendedMedatadata, error)
 
 	// GetSeq returns the current highest sequence number known to the BlockIndex.
 	// This can be used to determine the latest state of the index.
 	GetSeq() uint64
-
-	// Close releases any resources held by the BlockIndex implementation (e.g., database connections).
-	Close() error
 }
 
 func IsMetadataEqual(a *Metadata, b *Metadata) bool {

@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"juren/datastore/block"
+	"juren/datamodel/block"
 	"juren/oid"
 )
 
@@ -16,6 +16,7 @@ type PeerAnnouncementMessage struct {
 type BlockAnnouncementMessage struct {
 	NodeID oid.Oid        `cbor:"1,keyasint,omitempty"` // Node identifier
 	Block  block.Metadata `cbor:"2,keyasint,omitempty"` // Block metadata
+	Has    bool           `cbor:"3,keyasint,omitempty"` // Whether this node has this block in storage or not
 }
 
 // BlockDiscoveryMessage is broadcast to find peers that have a specific block.
@@ -32,8 +33,8 @@ type PeerSyncRequest struct {
 
 // PeerSyncResponse is sent by a peer in response to a PeerSyncRequest, containing a list of metadata entries.
 type PeerSyncResponse struct {
-	NodeID  oid.Oid                  `cbor:"1,keyasint,omitempty"` // Responding Node
-	Entries []*block.MetadataWithSeq `cbor:"2,keyasint,omitempty"`
+	NodeID  oid.Oid                     `cbor:"1,keyasint,omitempty"` // Responding Node
+	Entries []*block.ExtendedMedatadata `cbor:"2,keyasint,omitempty"`
 }
 
 // BlockGetRequest is sent to request a specific block from a peer.

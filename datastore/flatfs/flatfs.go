@@ -2,7 +2,7 @@
 package flatfs
 
 import (
-	"juren/datastore/block"
+	"juren/datamodel/block"
 	"juren/oid"
 	"os"
 	"path/filepath"

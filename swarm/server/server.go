@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"errors"
-	"juren/datastore/block"
+	"juren/datamodel/block"
 	"juren/net/crpc"
 	"juren/oid"
 	"juren/swarm/protocol"

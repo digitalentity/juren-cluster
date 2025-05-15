@@ -7,7 +7,7 @@ import (
 	"flag"
 	"juren/commands"
 	"juren/config"
-	"juren/datastore/block"
+	"juren/datamodel/block"
 	"juren/net/crpc"
 	"juren/net/mpubsub"
 	"juren/oid"
@@ -36,20 +36,20 @@ func RunPublish(ctx context.Context, cfg *config.Config) {
 type blockIndex struct {
 }
 
-func (b *blockIndex) GetByOid(oid.Oid) (*block.MetadataWithSeq, error) {
+func (b *blockIndex) GetByOid(oid.Oid) (*block.ExtendedMedatadata, error) {
 	return nil, errors.ErrUnsupported
 }
 
-func (b *blockIndex) GetBySeq(uint64) (*block.MetadataWithSeq, error) {
+func (b *blockIndex) GetBySeq(uint64) (*block.ExtendedMedatadata, error) {
 	return nil, errors.ErrUnsupported
 }
 
-func (b *blockIndex) Put(oid.Oid, *block.MetadataWithSeq) (*block.MetadataWithSeq, error) {
+func (b *blockIndex) Put(oid.Oid, *block.ExtendedMedatadata) (*block.ExtendedMedatadata, error) {
 	return nil, errors.ErrUnsupported
 }
 
-func (b *blockIndex) EnumerateBySeq(uint64, uint64) ([]*block.MetadataWithSeq, error) {
-	bl := []*block.MetadataWithSeq{
+func (b *blockIndex) EnumerateBySeq(uint64, uint64) ([]*block.ExtendedMedatadata, error) {
+	bl := []*block.ExtendedMedatadata{
 		{
 			Sequence: 1,
 			Metadata: &block.Metadata{
@@ -95,7 +95,7 @@ func (d *DemoServer) PeerAnnouncement(msg *protocol.PeerAnnouncementMessage) {
 func RunTest(ctx context.Context, cfg *config.Config) {
 	log.Infof("Running test for ipfs-go-storage...")
 
-	idx, err := ldb.New("/tmp/juren-cluster/leveldb")
+	idx, err := ldb.NewBlockIndex("/tmp/juren-cluster/leveldb")
 	if err != nil {
 		log.Fatalf("Failed to create LevelDB: %v", err)
 	}
