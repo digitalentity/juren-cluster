@@ -33,14 +33,12 @@ func RunTest(ctx context.Context, cfg *config.Config) {
 	}
 
 	// Create the CRPC server and listerner
-	rpcl, err := net.Listen("tcp4", cfg.Network.RPCListenAddress)
+	rpcl, err := net.Listen("tcp4", cfg.Network.RpcListenAddress)
 	if err != nil {
 		log.Fatalf("Failed to create RPC listener: %v", err)
 	}
 
 	rsrv := crpc.NewServer(rpcl)
-
-	log.Infof("RPC server listening on %s", rsrv.Addr())
 
 	// Create pubsub
 	psaddr, err := net.ResolveUDPAddr("udp", cfg.Network.PubSubMulticastAddress)
@@ -61,7 +59,7 @@ func RunTest(ctx context.Context, cfg *config.Config) {
 	pubsub := mpubsub.New(rs, ws)
 
 	// Create the node
-	node, err := node.New(cfg.Node.NodeID, blk, bidx, pidx, rsrv, pubsub)
+	node, err := node.New(cfg, blk, bidx, pidx, rsrv, pubsub)
 	if err != nil {
 		log.Fatalf("Failed to create node: %v", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"go/token"
+	"io"
 	"net"
 	"reflect"
 	"strconv"
@@ -137,49 +138,93 @@ func suitableMethods(typ reflect.Type) map[string]*methodType {
 	return methods
 }
 
-// FIXME: Add context handling
 func (srv *Server) Serve(ctx context.Context) error {
+	// Start a goroutine to close the listener when the context is cancelled.
+	// This will cause srv.listener.Accept() to return an error.
+	go func() {
+		<-ctx.Done()
+		log.Infof("crpc.Server: context cancelled, initiating shutdown for listener %s", srv.listener.Addr())
+		// Closing the listener will cause the Accept loop to unblock.
+		err := srv.listener.Close()
+		if err != nil {
+			// Log if closing the listener itself failed, but proceed with shutdown.
+			log.Warnf("crpc.Server: error closing listener %s: %v", srv.listener.Addr(), err)
+		}
+	}()
 
 	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
 		rw, err := srv.listener.Accept()
-		log.Infof("Accepted connection from %s", rw.RemoteAddr().String())
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
-				} else {
-					tempDelay *= 2
+			// Check if the context is cancelled. This is the primary signal for shutdown.
+			select {
+			case <-ctx.Done():
+				// Context was cancelled, listener.Close() was called (or is about to be).
+				// Accept() returning an error is expected in this case.
+				log.Infof("crpc.Server: shutting down listener %s due to context cancellation.", srv.listener.Addr())
+				return ctx.Err()
+			default:
+				// Context not cancelled yet, so the error from Accept() is for another reason.
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					if tempDelay == 0 {
+						tempDelay = 5 * time.Millisecond
+					} else {
+						tempDelay *= 2
+					}
+					if max := 1 * time.Second; tempDelay > max {
+						tempDelay = max
+					}
+					log.Warnf("crpc.Server: Accept error on %s: %v; retrying in %v", srv.listener.Addr(), err, tempDelay)
+					time.Sleep(tempDelay)
+					continue
 				}
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
-				}
-				log.Errorf("CBOR-RPC: Accept error: %v; retrying in %v", err, tempDelay)
-				time.Sleep(tempDelay)
-				continue
+				// If the error is not a timeout, and context is not done,
+				// it's likely a non-recoverable error for the listener.
+				log.Errorf("crpc.Server: critical accept error on %s: %v. Server stopping.", srv.listener.Addr(), err)
+				return err // Return the unexpected error.
 			}
-			return err
 		}
-		go srv.serveConn(rw)
+
+		tempDelay = 0 // Reset tempDelay on successful accept
+		log.Infof("crpc.Server: accepted connection from %s on %s", rw.RemoteAddr().String(), srv.listener.Addr())
+		go srv.serveConn(ctx, rw)
 	}
 }
 
-func (srv *Server) serveConn(conn net.Conn) {
+func (srv *Server) serveConn(ctx context.Context, conn net.Conn) {
 	decoder := cbor.NewDecoder(conn)
-	defer conn.Close()
+	defer func() {
+		log.Debugf("crpc.Server: serveConn for %s finished, closing connection.", conn.RemoteAddr())
+		conn.Close()
+	}()
+
 	for {
+		// Check context before attempting to read.
+		select {
+		case <-ctx.Done():
+			log.Infof("crpc.Server: serveConn for %s stopping due to server context cancellation.", conn.RemoteAddr())
+			return // Exit the goroutine if context is cancelled
+		default:
+			// Proceed with decoding
+		}
+
 		// Read the argument header
 		req := &RequestHeader{}
 		err := decoder.Decode(req)
 		if err != nil {
-			log.Errorf("Error decoding request header: %v", err)
+			logMessage := fmt.Sprintf("crpc.Server: error decoding request header for %s: %v", conn.RemoteAddr(), err)
+			if errors.Is(err, io.EOF) || strings.Contains(err.Error(), "use of closed network connection") {
+				log.Infof("crpc.Server: connection %s closed (EOF or closed explicitly): %v", conn.RemoteAddr(), err)
+			} else {
+				log.Error(logMessage)
+			}
 			return
 		}
 
 		// Parse the header
 		dot := strings.LastIndex(req.Method, ".")
 		if dot < 0 {
-			log.Errorf("rpc: service/method request ill-formed: %s", req.Method)
+			log.Errorf("crpc.Server: service/method request ill-formed: %q from %s", req.Method, conn.RemoteAddr())
 			return
 		}
 		serviceName := req.Method[:dot]
@@ -188,21 +233,27 @@ func (srv *Server) serveConn(conn net.Conn) {
 		// Look up the request.
 		svci, ok := srv.serviceMap.Load(serviceName)
 		if !ok {
-			log.Errorf("rpc: can't find service %s", req.Method)
+			log.Errorf("crpc.Server: can't find service %q for method %q from %s", serviceName, req.Method, conn.RemoteAddr())
 			return
 		}
 		svc := svci.(*service)
 		mtype := svc.method[methodName]
 		if mtype == nil {
-			log.Errorf("rpc: can't find method %s", req.Method)
+			log.Errorf("crpc.Server: can't find method %q for service %q from %s", methodName, serviceName, conn.RemoteAddr())
 			return
 		}
 
 		// Decode the argument value
-		argv := reflect.New(mtype.ArgType.Elem())
+		var argv reflect.Value
+		if mtype.ArgType.Kind() == reflect.Pointer {
+			argv = reflect.New(mtype.ArgType.Elem())
+		} else {
+			argv = reflect.New(mtype.ArgType)
+		}
+
 		err = decoder.Decode(argv.Interface())
 		if err != nil {
-			log.Errorf("Error decoding argument: %v", err)
+			log.Errorf("crpc.Server: error decoding argument for %s.%s on connection %s: %v", serviceName, methodName, conn.RemoteAddr(), err)
 			return
 		}
 
@@ -210,22 +261,34 @@ func (srv *Server) serveConn(conn net.Conn) {
 		replyv := reflect.New(mtype.ReplyType.Elem())
 
 		// Call the service
-		callerr := svc.call(mtype, argv, replyv)
-		repl.Err = callerr.Error()
+		var callErr error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Errorf("crpc.Server: panic during RPC call %s.%s from %s: %v", serviceName, methodName, conn.RemoteAddr(), r)
+					callErr = fmt.Errorf("rpc: internal server error during %s.%s", serviceName, methodName)
+				}
+			}()
+			callErr = svc.call(mtype, argv, replyv)
+		}()
+
+		if callErr != nil {
+			repl.Err = callErr.Error()
+		}
 
 		// Encode the Response Header
 		encoder := cbor.NewEncoder(conn)
 		err = encoder.Encode(repl)
 		if err != nil {
-			log.Errorf("Error encoding response header: %v", err)
+			log.Errorf("crpc.Server: error encoding response header for %s.%s on connection %s: %v", serviceName, methodName, conn.RemoteAddr(), err)
 			return
 		}
 
 		// Encode response body if call error was nil
-		if callerr == nil {
+		if callErr == nil {
 			err = encoder.Encode(replyv.Interface())
 			if err != nil {
-				log.Errorf("Error encoding response body: %v", err)
+				log.Errorf("crpc.Server: error encoding response body for %s.%s on connection %s: %v", serviceName, methodName, conn.RemoteAddr(), err)
 				return
 			}
 		}

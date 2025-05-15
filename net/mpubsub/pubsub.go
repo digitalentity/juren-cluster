@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -140,60 +141,85 @@ func (ps *PubSub) Publish(serviceMethod string, args interface{}) error {
 	return nil
 }
 
-// FIXME: Add context handleing
 func (ps *PubSub) Listen(ctx context.Context) error {
-	buf := make([]byte, 1024)
-	ps.rc.SetReadBuffer(1024)
+	// It's good practice to define a buffer size, e.g., based on expected max message size or MTU.
+	// For UDP, typical Ethernet MTU is 1500, minus IP/UDP headers, so ~1400 bytes is safe.
+	// Let's use a reasonably sized buffer.
+	buf := make([]byte, 2048) // Increased buffer size slightly
+
+	// Set a read deadline to allow periodic checks of the context.
+	// This makes the ReadFromUDP call non-blocking in the long run.
+	deadlineInterval := time.Millisecond * 100
+
 	for {
-		n, _, err := ps.rc.ReadFromUDP(buf)
-		if err != nil {
-			log.Errorf("mpubsub: failed to read message: %v", err)
-			continue
+		select {
+		case <-ctx.Done():
+			log.Infof("mpubsub: context cancelled, stopping listener for %s", ps.rc.LocalAddr())
+			return ctx.Err()
+
+		default:
+			// Set a deadline for the next read operation.
+			if err := ps.rc.SetReadDeadline(time.Now().Add(deadlineInterval)); err != nil {
+				log.Errorf("mpubsub: failed to set read deadline: %v", err)
+				continue
+			}
+
+			n, _, err := ps.rc.ReadFromUDP(buf)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Timeout is expected, continue to check context.
+					continue
+				}
+				log.Errorf("mpubsub: failed to read message: %v", err)
+				// For other errors, we might want to log and continue, or return.
+				continue
+			}
+
+			// Wrap the message in a reader and pass on to CBOR decoder
+			dec := cbor.NewDecoder(bytes.NewReader(buf[:n]))
+
+			var msg MessageHeader
+			err = dec.Decode(&msg)
+			if err != nil {
+				log.Errorf("mpubsub: failed to unmarshal message header: %v", err)
+				continue
+			}
+
+			dot := strings.LastIndex(msg.ServiceMethod, ".")
+			if dot < 0 {
+				log.Errorf("mpubsub: service/method request ill-formed: %s", msg.ServiceMethod)
+				continue
+			}
+			serviceName := msg.ServiceMethod[:dot]
+			methodName := msg.ServiceMethod[dot+1:]
+
+			svci, ok := ps.serviceMap.Load(serviceName)
+			if !ok {
+				log.Warnf("mpubsub: can't find service %s for method %s", serviceName, msg.ServiceMethod)
+				continue
+			}
+			svc := svci.(*service)
+
+			handler := svc.methods[methodName]
+			if handler == nil {
+				log.Warnf("mpubsub: can't find handler for method %s", msg.ServiceMethod)
+				continue
+			}
+
+			arg := reflect.New(handler.argType.Elem())
+			err = dec.Decode(arg.Interface())
+			if err != nil {
+				log.Errorf("mpubsub: failed to unmarshal arguments for %s: %v", msg.ServiceMethod, err)
+				continue
+			}
+
+			// log.Debugf("mpubsub: received message for %s", msg.ServiceMethod)
+
+			function := handler.method.Func
+			// Consider running the handler in a goroutine if it can block for a long time,
+			// but be mindful of potential message ordering issues if that's important.
+			// For now, direct call:
+			function.Call([]reflect.Value{svc.sub, arg})
 		}
-
-		// Wrap the message in a reader and pass on to CBOR decoder
-		dec := cbor.NewDecoder(bytes.NewReader(buf[:n]))
-
-		var msg MessageHeader
-		err = dec.Decode(&msg)
-		if err != nil {
-			log.Errorf("mpubsub: failed to unmarshal message: %v", err)
-			continue
-		}
-
-		dot := strings.LastIndex(msg.ServiceMethod, ".")
-		if dot < 0 {
-			log.Errorf("rpc: service/method request ill-formed: %s", msg.ServiceMethod)
-			continue
-		}
-		serviceName := msg.ServiceMethod[:dot]
-		methodName := msg.ServiceMethod[dot+1:]
-
-		svci, ok := ps.serviceMap.Load(serviceName)
-		if !ok {
-			log.Errorf("mpubsub: can't find service %s", msg.ServiceMethod)
-			continue
-		}
-		svc := svci.(*service)
-
-		handler := svc.methods[methodName]
-		if handler == nil {
-			log.Errorf("mpubsub: can't find method %s", msg.ServiceMethod)
-			continue
-		}
-
-		arg := reflect.New(handler.argType.Elem())
-		err = dec.Decode(arg.Interface())
-		if err != nil {
-			log.Errorf("mpubsub: failed to unmarshal arguments: %v", err)
-			continue
-		}
-
-		// log.Debugf("mpubsub: received message for %s", msg.ServiceMethod)
-
-		function := handler.method.Func
-		function.Call([]reflect.Value{svc.sub, arg})
 	}
-
-	return nil
 }

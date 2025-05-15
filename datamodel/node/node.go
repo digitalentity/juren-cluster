@@ -2,6 +2,7 @@ package node
 
 import (
 	"juren/oid"
+	"reflect"
 	"time"
 )
 
@@ -25,4 +26,8 @@ type NodeIndex interface {
 	// Enumerate returns a list of OIDs for all nodes currently in the index.
 	// It returns an error if an issue occurs during enumeration.
 	Enumerate() ([]*oid.Oid, error)
+}
+
+func IsMetadataEqual(a *Metadata, b *Metadata) bool {
+	return reflect.DeepEqual(a, b)
 }

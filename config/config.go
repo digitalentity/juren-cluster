@@ -20,7 +20,8 @@ type Config struct {
 
 	// Publisher settings define the IPNS address which will be used to manage the VFS
 	Network struct {
-		RPCListenAddress       string `json:"rpcListenAddress"`
+		RpcListenAddress       string `json:"rpcListenAddress"`
+		RpcAdvertizedAddress   string `json:"rpcAdvertizedAddress"`
 		PubSubMulticastAddress string `json:"pubSubMulticastAddress"`
 	} `json:"network"`
 
@@ -44,7 +45,8 @@ func NewEmptyConfig(configFile string) *Config {
 	}
 	cfg.Node.NodeID = nodeid
 
-	cfg.Network.RPCListenAddress = "0.0.0.0:5001"
+	cfg.Network.RpcListenAddress = "0.0.0.0:5001"
+	cfg.Network.RpcAdvertizedAddress = ""
 	cfg.Network.PubSubMulticastAddress = "224.0.0.1:5002"
 
 	cfg.DataStore.BlockStorePath = "/tmp/juren-cluster/blocks"

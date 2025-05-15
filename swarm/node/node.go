@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"juren/config"
 	"juren/datamodel/block"
 	"juren/datamodel/node"
 	"juren/net/crpc"
@@ -17,90 +18,67 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type SwarmRPCServer struct {
-	node *Node
-}
-
-type SwarmPubSub struct {
-	node *Node
-}
-
-func (s *SwarmPubSub) PeerAnnouncement(msg *protocol.PeerAnnouncementMessage) {
-	log.Infof("PeerAnnouncement: node: %s, addresses: %s, seq: %d", msg.NodeID.String(), msg.Addresses, msg.SequenceNumber)
-
-	// Store the metadata in the NodeIndex
-	_, err := s.node.nodeIndex.Put(&node.Metadata{
-		NodeID:    msg.NodeID,
-		Addresses: msg.Addresses,
-
-		// FIXME: This is wrong, the locally stored SequenceNumber is the _synchronized_ number, not the announced number
-		SequenceNumber: msg.SequenceNumber,
-		LastSeen:       time.Now(),
-	})
-	if err != nil {
-		log.Errorf("Failed to store node metadata: %v", err)
-	}
-}
-
-func (s *SwarmPubSub) BlockAnnouncement(msg *protocol.BlockAnnouncementMessage) {
-	log.Infof("BlockAnnouncement: node: %s, block: %s, presence: %v", msg.NodeID.String(), msg.Block.Oid.String(), msg.Has)
-}
-
 type Node struct {
 	// Node ID
-	nodeID    *oid.Oid
-	addresses []string
+	NodeID    *oid.Oid
+	Addresses []string
 
 	// Storage
-	blockStore block.BlockStore
-	blockIndex block.BlockIndex
-	nodeIndex  node.NodeIndex
+	BlockStore block.BlockStore
+	BlockIndex block.BlockIndex
+	NodeIndex  node.NodeIndex
 
 	// Networking
-	rpcServer *crpc.Server
-	pubsub    *mpubsub.PubSub
+	RpcServer *crpc.Server
+	PubSub    *mpubsub.PubSub
 
 	// RPC and PubSub implementations
-	rpcImpl    *SwarmRPCServer
-	pubsubImpl *SwarmPubSub
+	RpcHandlers    *Server
+	PubSubHandlers *PubSub
 }
 
-func New(nodeID *oid.Oid, blockstore block.BlockStore, blockindex block.BlockIndex, nodeindex node.NodeIndex, rpcServer *crpc.Server, pubsub *mpubsub.PubSub) (*Node, error) {
+func New(cfg *config.Config, blockstore block.BlockStore, blockindex block.BlockIndex, nodeindex node.NodeIndex, rpcServer *crpc.Server, pubsub *mpubsub.PubSub) (*Node, error) {
 	// Create the node object
 	node := &Node{
-		nodeID:     nodeID,
-		blockStore: blockstore,
-		blockIndex: blockindex,
-		nodeIndex:  nodeindex,
+		NodeID:     cfg.Node.NodeID,
+		BlockStore: blockstore,
+		BlockIndex: blockindex,
+		NodeIndex:  nodeindex,
 	}
 
-	// Figure out the IP addresses and ports on which the RPCServer is listening:
-	addrs := rpcServer.Addr()
+	if cfg.Network.RpcAdvertizedAddress != "" {
+		node.Addresses = append(node.Addresses, cfg.Network.RpcAdvertizedAddress)
+	} else {
+		// Figure out the IP addresses and ports on which the RPCServer is listening:
+		addrs := rpcServer.Addr()
 
-	// Populate the node.addresses with non-loopback addresses from addrs slice.
-	for _, addr := range addrs {
-		if tcpAddr, ok := addr.(*net.TCPAddr); ok {
-			if !tcpAddr.IP.IsLoopback() {
-				node.addresses = append(node.addresses, tcpAddr.String())
+		// Populate the node.addresses with non-loopback addresses from addrs slice.
+		for _, addr := range addrs {
+			if tcpAddr, ok := addr.(*net.TCPAddr); ok {
+				if !tcpAddr.IP.IsLoopback() {
+					node.Addresses = append(node.Addresses, tcpAddr.String())
+				}
 			}
 		}
 	}
 
-	if len(node.addresses) == 0 {
+	if len(node.Addresses) == 0 {
 		return nil, errors.New("no non-loopback addresses found")
 	}
 
+	log.Infof("Advertized RPC addresses: %s", node.Addresses)
+
 	// Set up RPC Server
-	node.rpcImpl = &SwarmRPCServer{node: node}
-	node.rpcServer = rpcServer
-	node.rpcServer.Register(node.rpcImpl)
+	node.RpcHandlers = &Server{node: node}
+	node.RpcServer = rpcServer
+	node.RpcServer.Register(node.RpcHandlers)
 
 	// Set up PubSub
-	node.pubsubImpl = &SwarmPubSub{node: node}
-	node.pubsub = pubsub
-	node.pubsub.Register(node.pubsubImpl)
+	node.PubSubHandlers = &PubSub{node: node}
+	node.PubSub = pubsub
+	node.PubSub.Register(node.PubSubHandlers)
 
-	log.Infof("I am %s, listening on %s", node.nodeID.String(), node.addresses)
+	log.Infof("I am %s, listening on %s", node.NodeID.String(), node.Addresses)
 
 	return node, nil
 }
@@ -113,38 +91,39 @@ func (n *Node) publishPeerAnnouncement(ctx context.Context) error {
 		case <-ticker.C:
 			// FIXME: Get the NodeID and Address
 			msg := &protocol.PeerAnnouncementMessage{
-				NodeID:         *n.nodeID,
-				Addresses:      n.addresses,
-				SequenceNumber: n.blockIndex.GetSeq(),
+				NodeID:         *n.NodeID,
+				Addresses:      n.Addresses,
+				SequenceNumber: n.BlockIndex.GetSeq(),
 			}
 
-			if err := n.pubsub.Publish("SwarmPubSub.PeerAnnouncement", msg); err != nil {
+			if err := n.PubSub.Publish("PubSub.PeerAnnouncement", msg); err != nil {
 				log.Errorf("Failed to publish peer announcement: %v", err)
 			}
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		}
 	}
+
 }
 
 func (n *Node) Run(ctx context.Context) error {
-	wg := errgroup.Group{}
+	wg, cctx := errgroup.WithContext(ctx)
 
 	wg.Go(func() error {
-		return n.pubsub.Listen(ctx)
+		return n.PubSub.Listen(cctx)
 	})
 
 	wg.Go(func() error {
-		return n.rpcServer.Serve(ctx)
+		return n.RpcServer.Serve(cctx)
 	})
 
 	wg.Go(func() error {
-		return n.publishPeerAnnouncement(ctx)
+		return n.publishPeerAnnouncement(cctx)
 	})
 
 	wg.Go(func() error {
 		// FIXME: Implement the main loop
-		<-ctx.Done()
+		<-cctx.Done()
 		return nil
 	})
 
