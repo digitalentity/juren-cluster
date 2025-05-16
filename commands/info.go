@@ -20,7 +20,7 @@ func RunInfo(ctx context.Context, cfg *config.Config) {
 		log.Fatalf("Failed to create node index: %v", err)
 	}
 
-	// o := oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQAXT")
+	// o := oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQBXT")
 	// blk := &block.ExtendedMedatadata{
 	// 	SequenceNumber: 0,
 	// 	UpdateTime:     time.Now(),

@@ -22,6 +22,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const BlockIndexSyncBatchSize = 100
+
 type Node struct {
 	// Configuration
 	cfg *config.Config
@@ -171,20 +173,23 @@ func (n *Node) syncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
 			ps, err := c.PeerSync(ctx, &protocol.PeerSyncRequest{
 				NodeID:         newMetadata.NodeID,
 				SequenceNumber: maxSeenBlockSeq + 1,
-				BatchSize:      100,
+				BatchSize:      BlockIndexSyncBatchSize,
 			})
 
 			if err != nil {
 				return nil, fmt.Errorf("failed to sync block index: %w", err)
 			}
 
-			// We received no blocks this time - we're done
+			log.Infof("SyncBlockIndexAndUpdateMetadata: received %d blocks from %s", len(ps.Entries), newMetadata.NodeID.String())
+
+			// We received no blocks this time - we're done, no further processing needed
 			if len(ps.Entries) == 0 {
 				break
 			}
 
-			log.Infof("SyncBlockIndexAndUpdateMetadata: received %d blocks from %s", len(ps.Entries), newMetadata.NodeID.String())
 			for _, block := range ps.Entries {
+				log.Debugf("SyncBlockIndexAndUpdateMetadata: received seq %d, oid: %s, updated: %v", block.SequenceNumber, block.Metadata.Oid.String(), block.Metadata.UpdateTime)
+
 				_, err := n.BlockIndex.Put(block)
 				if err != nil {
 					return nil, fmt.Errorf("failed to put block metadata: %w", err)
@@ -201,6 +206,11 @@ func (n *Node) syncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
 			_, err = n.NodeIndex.Put(newMetadata)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update node metadata: %v", err)
+			}
+
+			// If we received fewer than BlockIndexSyncBatchSize blocks, this was the last batch and we should stop
+			if len(ps.Entries) < BlockIndexSyncBatchSize {
+				break
 			}
 		}
 
