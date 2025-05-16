@@ -143,3 +143,14 @@ func Random(t OidType) (*Oid, error) {
 
 	return oid, nil
 }
+
+// Equal helper
+func (o *Oid) Equal(other *Oid) bool {
+	if o == nil && other == nil {
+		return true
+	}
+	if o == nil || other == nil {
+		return false
+	}
+	return o.b == other.b
+}

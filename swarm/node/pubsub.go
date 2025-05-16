@@ -2,7 +2,9 @@ package node
 
 import (
 	"juren/datamodel/node"
+	"juren/net/mpubsub"
 	"juren/swarm/protocol"
+	"net"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -12,23 +14,44 @@ type PubSub struct {
 	node *Node
 }
 
-func (s *PubSub) PeerAnnouncement(msg *protocol.PeerAnnouncementMessage) {
-	log.Infof("PeerAnnouncement: node: %s, addresses: %s, seq: %d", msg.NodeID.String(), msg.Addresses, msg.SequenceNumber)
+func (s *PubSub) PeerAnnouncement(sender *mpubsub.PublisherAddress, msg *protocol.PeerAnnouncementMessage) {
+	log.Infof("PeerAnnouncement from %s: node: %s, addresses: %s, seq: %d", sender.IP.String(), msg.NodeID.String(), msg.Addresses, msg.SequenceNumber)
 
-	// Store the metadata in the NodeIndex
-	_, err := s.node.NodeIndex.Put(&node.Metadata{
-		NodeID:    msg.NodeID,
-		Addresses: msg.Addresses,
+	// Filter msg.Addresses to match the sender IP (if there is a match)
+	var filteredAddresses []string
+	for _, addr := range msg.Addresses {
+		na, err := net.ResolveTCPAddr("tcp4", addr)
+		if err != nil {
+			log.Errorf("Failed to resolve address %s: %v", addr, err)
+			continue
+		}
+		if na.IP.String() == sender.IP.String() {
+			filteredAddresses = append(filteredAddresses, addr)
+		}
+	}
 
-		// FIXME: This is wrong, the locally stored SequenceNumber is the _synchronized_ number, not the announced number
+	// If there is no match, use the provided addresses regardless
+	if len(filteredAddresses) == 0 {
+		filteredAddresses = msg.Addresses
+	}
+
+	// Build the new node metadata:
+	newmd := &node.Metadata{
+		NodeID:         msg.NodeID,
+		Addresses:      filteredAddresses,
 		SequenceNumber: msg.SequenceNumber,
 		LastSeen:       time.Now(),
-	})
-	if err != nil {
-		log.Errorf("Failed to store node metadata: %v", err)
 	}
+
+	// Initiate a sync and metadata update. The syncBlockIndexAndUpdateMetadata will take care of the rest
+	go s.node.SyncBlockIndexAndUpdateMetadata(newmd)
+
+	// Initiate block replication (will trigger resync either when the node has not been seen for a while or periodically)
+	// go s.node.ProcessBlockReplication(newmd)
 }
 
-func (s *PubSub) BlockAnnouncement(msg *protocol.BlockAnnouncementMessage) {
-	log.Infof("BlockAnnouncement: node: %s, block: %s, presence: %v", msg.NodeID.String(), msg.Block.Oid.String(), msg.Has)
+func (s *PubSub) BlockAnnouncement(sender *mpubsub.PublisherAddress, msg *protocol.BlockAnnouncementMessage) {
+	log.Infof("BlockAnnouncement from %s: node: %s, block: %s, has: %t", sender.IP.String(), msg.NodeID.String(), msg.Block.Oid.String(), msg.Has)
+
+	// TODO
 }

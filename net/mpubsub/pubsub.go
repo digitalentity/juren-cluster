@@ -18,6 +18,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type PublisherAddress struct {
+	net.UDPAddr
+}
+
 type MessageHeader struct {
 	ServiceMethod string `cbor:"1,keyasint,omitempty"`
 }
@@ -96,12 +100,19 @@ func suitableHandlers(typ reflect.Type) map[string]*handlerType {
 			continue
 		}
 		// Method needs one in: receiver, *args.
-		if mtype.NumIn() != 2 {
-			log.Errorf("mpubsub.Subscribe: method %q has %d input parameters; needs exactly two\n", mname, mtype.NumIn())
+		if mtype.NumIn() != 3 {
+			log.Errorf("mpubsub.Subscribe: method %q has %d input parameters; needs exactly three\n", mname, mtype.NumIn())
 			continue
 		}
-		// First arg must be a pointer.
-		argType := mtype.In(1)
+		// First arg must be a pointer to PublisherAddress.
+		senderType := mtype.In(1)
+		if senderType != reflect.TypeOf(&PublisherAddress{}) {
+			log.Errorf("mpubsub.Subscribe: argument type of method %q is not %q: %q\n", mname, reflect.TypeOf(&PublisherAddress{}), senderType)
+			continue
+		}
+
+		// Second arg must be a pointer.
+		argType := mtype.In(2)
 		if argType.Kind() != reflect.Pointer {
 			log.Errorf("mpubsub.Subscribe: argument type of method %q is not a pointer: %q\n", mname, argType)
 			continue
@@ -164,7 +175,7 @@ func (ps *PubSub) Listen(ctx context.Context) error {
 				continue
 			}
 
-			n, _, err := ps.rc.ReadFromUDP(buf)
+			n, addr, err := ps.rc.ReadFromUDP(buf)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					// Timeout is expected, continue to check context.
@@ -213,13 +224,19 @@ func (ps *PubSub) Listen(ctx context.Context) error {
 				continue
 			}
 
+			sender := &PublisherAddress{
+				UDPAddr: *addr,
+			}
+
 			// log.Debugf("mpubsub: received message for %s", msg.ServiceMethod)
 
 			function := handler.method.Func
+			args := []reflect.Value{svc.sub, reflect.ValueOf(sender), arg}
+
 			// Consider running the handler in a goroutine if it can block for a long time,
 			// but be mindful of potential message ordering issues if that's important.
 			// For now, direct call:
-			function.Call([]reflect.Value{svc.sub, arg})
+			function.Call(args)
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -35,6 +36,9 @@ type Node struct {
 	// RPC and PubSub implementations
 	RpcHandlers    *Server
 	PubSubHandlers *PubSub
+
+	// Helpers
+	sg singleflight.Group
 }
 
 func New(cfg *config.Config, blockstore block.BlockStore, blockindex block.BlockIndex, nodeindex node.NodeIndex, rpcServer *crpc.Server, pubsub *mpubsub.PubSub) (*Node, error) {
@@ -103,7 +107,54 @@ func (n *Node) publishPeerAnnouncement(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
 
+// Initiates a block index sync with the given node. This function doesn't return an error
+func (n *Node) SyncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
+	// Check if we received our own announcement
+	if newMetadata.NodeID == *n.NodeID {
+		return
+	}
+
+	n.sg.Do("SyncBlockIndexAndUpdateMetadata", func() (interface{}, error) {
+		addr := newMetadata.Addresses[0]
+
+		// Fetch the metadata from the NodeIndex
+		existingMetadata, err := n.NodeIndex.Get(&newMetadata.NodeID)
+		if err != nil {
+			// If the node metadata is not found in the NodeIndex, we assume we never saw this node and need to sync.
+			existingMetadata = &node.Metadata{
+				NodeID:         newMetadata.NodeID,
+				SequenceNumber: 0,
+			}
+		}
+
+		// This is a potential bug (duplicate NodeID)
+		if existingMetadata.SequenceNumber > newMetadata.SequenceNumber {
+			log.Errorf("SyncBlockIndexAndUpdateMetadata(%s): known sequence number (%d) is greater than new sequence number (%d), ignoring",
+				newMetadata.NodeID.String(), existingMetadata.SequenceNumber, newMetadata.SequenceNumber)
+			return nil, nil
+		}
+
+		// If the sequence numbers match, we have nothing to do
+		if existingMetadata.SequenceNumber == newMetadata.SequenceNumber {
+			log.Infof("SyncBlockIndexAndUpdateMetadata(%s) no update needed", newMetadata.NodeID.String())
+
+			// Update the metadata in the NodeIndex
+			_, err := n.NodeIndex.Put(newMetadata)
+			if err != nil {
+				log.Errorf("SyncBlockIndexAndUpdateMetadata: failed to update node metadata: %v", err)
+			}
+
+			return nil, nil
+		}
+
+		log.Infof("Syncing block index with %s @ %s: %d -> %d", newMetadata.NodeID.String(), addr, existingMetadata.SequenceNumber, newMetadata.SequenceNumber)
+
+		// TODO: Implement the actual sync logic
+
+		return nil, nil
+	})
 }
 
 func (n *Node) Run(ctx context.Context) error {
