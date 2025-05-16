@@ -60,7 +60,7 @@ func (l *BlockIndex) GetByOid(oid *oid.Oid) (*block.ExtendedMedatadata, error) {
 	defer l.mu.Unlock()
 
 	// Fetch the object
-	raw, err := l.db.Get(keyFromOid(oid), nil)
+	raw, err := l.db.Get(keyFromBlockOid(oid), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (l *BlockIndex) Put(metadata *block.ExtendedMedatadata) (*block.ExtendedMed
 	oid := &metadata.Metadata.Oid
 
 	// Generic fetch and unmarshall
-	raw, err := l.db.Get(keyFromOid(oid), nil)
+	raw, err := l.db.Get(keyFromBlockOid(oid), nil)
 	if err != nil && err != errors.ErrNotFound {
 		return nil, err
 	}
@@ -123,9 +123,18 @@ func (l *BlockIndex) Put(metadata *block.ExtendedMedatadata) (*block.ExtendedMed
 	if err == nil {
 		existing := &block.ExtendedMedatadata{}
 		err = cbor.Unmarshal(raw, existing)
-		if err == nil && block.IsMetadataEqual(existing.Metadata, metadata.Metadata) {
-			log.Debugf("Put: Metadata for OID %s is unchanged, skipping update", oid.String())
-			return existing, nil
+		if err == nil {
+			// First check if the metadata is completely equal
+			if block.IsMetadataEqual(existing.Metadata, metadata.Metadata) {
+				log.Debugf("Put: Metadata for OID %s is unchanged, skipping update", oid.String())
+				return existing, nil
+			}
+
+			// Now check if the existing metadata has a newer timestamp
+			if existing.Metadata.UpdateTime.After(metadata.Metadata.UpdateTime) {
+				log.Debugf("Put: New metadata for OID %s is older, skipping update", oid.String())
+				return existing, nil
+			}
 		}
 	}
 
@@ -148,7 +157,7 @@ func (l *BlockIndex) Put(metadata *block.ExtendedMedatadata) (*block.ExtendedMed
 	batch := new(leveldb.Batch)
 
 	// Insert OID -> Metadata and Seq -> Metadata objects
-	batch.Put(keyFromOid(oid), raw)
+	batch.Put(keyFromBlockOid(oid), raw)
 	batch.Put(keyFromSeq(newSeq), raw)
 
 	// Write the batch
@@ -168,7 +177,7 @@ func (l *BlockIndex) Has(oid *oid.Oid) (bool, error) {
 	defer l.mu.Unlock()
 
 	// Check if the key exists
-	_, err := l.db.Get(keyFromOid(oid), nil)
+	_, err := l.db.Get(keyFromBlockOid(oid), nil)
 	if err == nil {
 		return true, nil // Key exists
 	} else if err == errors.ErrNotFound {
@@ -193,6 +202,32 @@ func (l *BlockIndex) EnumerateBySeq(start uint64, end uint64) ([]*block.Extended
 
 	// Create an iterator for the range of sequence numbers
 	iter := l.db.NewIterator(&util.Range{Start: keyStart, Limit: keyEnd}, nil)
+	defer iter.Release()
+
+	// Iterate over the range and collect metadata entries
+	for iter.Next() {
+		raw := iter.Value()
+
+		metadata := &block.ExtendedMedatadata{}
+		err := cbor.Unmarshal(raw, metadata)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, metadata)
+	}
+
+	return results, nil
+}
+
+func (l *BlockIndex) Enumerate() ([]*block.ExtendedMedatadata, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	var results []*block.ExtendedMedatadata
+
+	// Create an iterator for the range of sequence numbers
+	iter := l.db.NewIterator(util.BytesPrefix([]byte(keyPrefixOID)), nil)
 	defer iter.Release()
 
 	// Iterate over the range and collect metadata entries

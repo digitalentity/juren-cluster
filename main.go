@@ -18,10 +18,6 @@ func setLogLevel(level string) {
 	log.SetLevel(l)
 }
 
-func RunPublish(ctx context.Context, cfg *config.Config) {
-	log.Infof("Publishing ipfs-go-storage...")
-}
-
 // type blockIndex struct {
 // }
 
@@ -271,12 +267,18 @@ func registerGlobalFlags(fset *flag.FlagSet) {
 	})
 }
 
+func checkConfig(cfg string) {
+	if cfg == "" {
+		log.Fatal("Config file not specified")
+	}
+}
+
 // main is the entry point of the application.
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	configFile := flag.String("config", "/tmp/juren-cluster/config.json", "Path to config file")
+	configFile := flag.String("config", "", "Path to config file")
 	logLevel := flag.String("loglevel", "debug", "Log level")
 
 	initCmd := flag.NewFlagSet("init", flag.ExitOnError)
@@ -292,6 +294,9 @@ func main() {
 	testCmd := flag.NewFlagSet("test", flag.ExitOnError)
 	registerGlobalFlags(testCmd)
 
+	infoCmd := flag.NewFlagSet("info", flag.ExitOnError)
+	registerGlobalFlags(infoCmd)
+
 	if len(os.Args) < 2 {
 		log.WithField("args", os.Args).Fatal("Expected a subcommand")
 	}
@@ -300,11 +305,13 @@ func main() {
 	switch cmd {
 	case "init":
 		initCmd.Parse(args)
+		checkConfig(*configFile)
 		setLogLevel(*logLevel)
 		cfg := config.NewEmptyConfig(*configFile)
 		commands.RunInit(ctx, cfg)
 	case "serve":
 		serveCmd.Parse(args)
+		checkConfig(*configFile)
 		setLogLevel(*logLevel)
 		cfg, err := config.NewConfigFromFile(*configFile)
 		if err != nil {
@@ -313,20 +320,31 @@ func main() {
 		commands.RunServe(ctx, cfg, *mountPoint)
 	case "publish":
 		publishCmd.Parse(args)
+		checkConfig(*configFile)
 		setLogLevel(*logLevel)
 		cfg, err := config.NewConfigFromFile(*configFile)
 		if err != nil {
 			log.Fatalf("Failed to load config: %v", err)
 		}
-		RunPublish(ctx, cfg)
+		commands.RunPublish(ctx, cfg)
 	case "test":
 		testCmd.Parse(args)
+		checkConfig(*configFile)
 		setLogLevel(*logLevel)
 		cfg, err := config.NewConfigFromFile(*configFile)
 		if err != nil {
 			log.Fatalf("Failed to load config: %v", err)
 		}
 		commands.RunTest(ctx, cfg)
+	case "info":
+		infoCmd.Parse(args)
+		checkConfig(*configFile)
+		setLogLevel(*logLevel)
+		cfg, err := config.NewConfigFromFile(*configFile)
+		if err != nil {
+			log.Fatalf("Failed to load config: %v", err)
+		}
+		commands.RunInfo(ctx, cfg)
 	default:
 		log.Fatalf("Invalid subcommand '%s'", os.Args[1])
 	}

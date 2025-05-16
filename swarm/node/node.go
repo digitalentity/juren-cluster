@@ -23,6 +23,9 @@ import (
 )
 
 type Node struct {
+	// Configuration
+	cfg *config.Config
+
 	// Node ID
 	NodeID    *oid.Oid
 	Addresses []string
@@ -47,6 +50,7 @@ type Node struct {
 func New(cfg *config.Config, blockstore block.BlockStore, blockindex block.BlockIndex, nodeindex node.NodeIndex, rpcServer *crpc.Server, pubsub *mpubsub.PubSub) (*Node, error) {
 	// Create the node object
 	node := &Node{
+		cfg:        cfg,
 		NodeID:     cfg.Node.NodeID,
 		BlockStore: blockstore,
 		BlockIndex: blockindex,
@@ -109,7 +113,7 @@ func (n *Node) publishPeerAnnouncement(ctx context.Context) error {
 func (n *Node) syncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
 	// Check if we received our own announcement
 	if newMetadata.NodeID == *n.NodeID {
-		log.Debugf("Received our own announcement - ignoring")
+		// log.Debugf("Received our own announcement - ignoring")
 		return
 	}
 
@@ -166,7 +170,7 @@ func (n *Node) syncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
 
 			ps, err := c.PeerSync(ctx, &protocol.PeerSyncRequest{
 				NodeID:         newMetadata.NodeID,
-				SequenceNumber: maxSeenBlockSeq, // +1 ?
+				SequenceNumber: maxSeenBlockSeq + 1,
 				BatchSize:      100,
 			})
 
@@ -208,7 +212,27 @@ func (n *Node) syncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
 	}
 }
 
+func (n *Node) LogNodeIndex() {
+	nodes, err := n.NodeIndex.Enumerate()
+	if err != nil {
+		log.Errorf("Failed to enumerate node index: %v", err)
+		return
+	}
+	log.Infof("Node index: %d nodes known", len(nodes))
+	for _, nodeid := range nodes {
+		node, err := n.NodeIndex.Get(nodeid)
+		if err != nil {
+			log.Errorf("Failed to get node metadata: %v", err)
+			continue
+		}
+		log.Infof("Node: %s, addr: %s, seq: %d, last seen: %v", node.NodeID.String(), node.Addresses[0], node.SequenceNumber, node.LastSeen.Sub(time.Now()))
+	}
+}
+
 func (n *Node) Run(ctx context.Context) error {
+	n.LogNodeIndex()
+
+	// Run nodes
 	wg, cctx := errgroup.WithContext(ctx)
 
 	wg.Go(func() error {
@@ -221,7 +245,7 @@ func (n *Node) Run(ctx context.Context) error {
 
 	wg.Go(func() error {
 		interval := &timer.Interval{
-			Duration: time.Second * 5,
+			Duration: n.cfg.Network.NodeAdversizeInterval,
 			Jitter:   time.Millisecond * 0,
 		}
 		return timer.RunWithTicker(cctx, interval, n.publishPeerAnnouncement)

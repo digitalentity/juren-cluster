@@ -21,8 +21,12 @@ type LebelDB struct {
 	db   *leveldb.DB
 }
 
-func keyFromOid(oid *oid.Oid) []byte {
+func keyFromBlockOid(oid *oid.Oid) []byte {
 	return append([]byte(keyPrefixOID), []byte(oid.String())...)
+}
+
+func keyFromNodeOid(oid *oid.Oid) []byte {
+	return append([]byte(keyPrefixNode), []byte(oid.String())...)
 }
 
 func keyFromSeq(seq uint64) []byte {

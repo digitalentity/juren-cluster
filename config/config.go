@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"juren/oid"
 	"os"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -20,9 +21,11 @@ type Config struct {
 
 	// Publisher settings define the IPNS address which will be used to manage the VFS
 	Network struct {
-		RpcListenAddress       string `json:"rpcListenAddress"`
-		RpcAdvertizedAddress   string `json:"rpcAdvertizedAddress"`
-		PubSubMulticastAddress string `json:"pubSubMulticastAddress"`
+		RpcListenAddress       string        `json:"rpcListenAddress"`
+		RpcAdvertizedAddress   string        `json:"rpcAdvertizedAddress"`
+		PubSubMulticastAddress string        `json:"pubSubMulticastAddress"`
+		NodeAdversizeInterval  time.Duration `json:"nodeAdversizeInterval"`
+		NodeTimeout            time.Duration `json:"nodeTimeout"`
 	} `json:"network"`
 
 	DataStore struct {
@@ -45,9 +48,10 @@ func NewEmptyConfig(configFile string) *Config {
 	}
 	cfg.Node.NodeID = nodeid
 
-	cfg.Network.RpcListenAddress = "0.0.0.0:5001"
+	cfg.Network.RpcListenAddress = "0.0.0.0:6001"
 	cfg.Network.RpcAdvertizedAddress = ""
-	cfg.Network.PubSubMulticastAddress = "224.0.0.1:5002"
+	cfg.Network.PubSubMulticastAddress = "224.0.0.1:5000"
+	cfg.Network.NodeAdversizeInterval = time.Second * 5
 
 	cfg.DataStore.BlockStorePath = "/tmp/juren-cluster/blocks"
 	cfg.DataStore.BlockIndexPath = "/tmp/juren-cluster/metadata"

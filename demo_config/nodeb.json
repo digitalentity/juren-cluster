@@ -1,0 +1,17 @@
+{
+  "node": {
+    "nodeID": "AGVAGWFE2IMZZD4BF4A4HLPKOG55M74C347T3IMPPP73OLQICVNXP5GD"
+  },
+  "network": {
+    "rpcListenAddress": "0.0.0.0:6002",
+    "rpcAdvertizedAddress": "",
+    "pubSubMulticastAddress": "224.0.0.1:5000",
+    "nodeAdversizeInterval": 5000000000,
+    "nodeTimeout": 60000000000
+  },
+  "datastore": {
+    "metadata": "/tmp/juren-cluster/nodeb/blocks",
+    "blocks": "/tmp/juren-cluster/nodeb/metadata",
+    "peers": "/tmp/juren-cluster/nodeb/peers"
+  }
+}

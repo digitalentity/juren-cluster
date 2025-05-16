@@ -40,7 +40,7 @@ func (l *NodeIndex) Get(oid *oid.Oid) (*node.Metadata, error) {
 	defer l.mu.Unlock()
 
 	// Fetch the object
-	raw, err := l.db.Get(keyFromOid(oid), nil)
+	raw, err := l.db.Get(keyFromNodeOid(oid), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (l *NodeIndex) Put(metadata *node.Metadata) (*node.Metadata, error) {
 	}
 
 	// Insert
-	err = l.db.Put(keyFromOid(&metadata.NodeID), raw, nil)
+	err = l.db.Put(keyFromNodeOid(&metadata.NodeID), raw, nil)
 	if err != nil {
 		return nil, err
 	}

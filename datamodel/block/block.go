@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+const (
+	MaxBlockSize = 1 * 1024 * 1024 // 1MB
+)
+
 // OID of a BLOCK is identified by the blocks content
 type Block struct {
 	_      struct{} `cbor:",toarray"` // This is compact, but doesn't retain the field structure
@@ -81,11 +85,15 @@ type BlockIndex interface {
 	// It returns a slice of MetadataWithSeq objects and an error if the enumeration fails or the range is invalid.
 	EnumerateBySeq(uint64, uint64) ([]*ExtendedMedatadata, error)
 
+	// Enumerate returns all metadata entries in the index.
+	// It returns a slice of MetadataWithSeq objects and an error if the enumeration fails.
+	Enumerate() ([]*ExtendedMedatadata, error)
+
 	// GetSeq returns the current highest sequence number known to the BlockIndex.
 	// This can be used to determine the latest state of the index.
 	GetSeq() uint64
 }
 
 func IsMetadataEqual(a *Metadata, b *Metadata) bool {
-	return reflect.DeepEqual(a, b)
+	return reflect.DeepEqual(&a, &b)
 }
