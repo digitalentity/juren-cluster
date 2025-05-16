@@ -194,7 +194,7 @@ func (srv *Server) Serve(ctx context.Context) error {
 func (srv *Server) serveConn(ctx context.Context, conn net.Conn) {
 	decoder := cbor.NewDecoder(conn)
 	defer func() {
-		log.Debugf("crpc.Server: serveConn for %s finished, closing connection.", conn.RemoteAddr())
+		// log.Debugf("crpc.Server: serveConn for %s finished, closing connection.", conn.RemoteAddr())
 		conn.Close()
 	}()
 
@@ -214,7 +214,7 @@ func (srv *Server) serveConn(ctx context.Context, conn net.Conn) {
 		if err != nil {
 			logMessage := fmt.Sprintf("crpc.Server: error decoding request header for %s: %v", conn.RemoteAddr(), err)
 			if errors.Is(err, io.EOF) || strings.Contains(err.Error(), "use of closed network connection") {
-				log.Infof("crpc.Server: connection %s closed (EOF or closed explicitly): %v", conn.RemoteAddr(), err)
+				log.Debugf("crpc.Server: connection %s closed (EOF or closed explicitly): %v", conn.RemoteAddr(), err)
 			} else {
 				log.Error(logMessage)
 			}

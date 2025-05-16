@@ -4,6 +4,7 @@ go 1.24.2
 
 require (
 	github.com/fxamacker/cbor/v2 v2.8.0
+	github.com/lthibault/jitterbug v2.0.0+incompatible
 	github.com/sirupsen/logrus v1.9.3
 )
 

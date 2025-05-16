@@ -44,7 +44,7 @@ func (s *PubSub) PeerAnnouncement(sender *mpubsub.PublisherAddress, msg *protoco
 	}
 
 	// Initiate a sync and metadata update. The syncBlockIndexAndUpdateMetadata will take care of the rest
-	go s.node.SyncBlockIndexAndUpdateMetadata(newmd)
+	go s.node.syncBlockIndexAndUpdateMetadata(newmd)
 
 	// Initiate block replication (will trigger resync either when the node has not been seen for a while or periodically)
 	// go s.node.ProcessBlockReplication(newmd)

@@ -99,8 +99,8 @@ func (l *BlockIndex) GetBySeq(seq uint64) (*block.ExtendedMedatadata, error) {
 	}
 
 	// Compare the Sequence Number just in case
-	if md.Sequence != seq {
-		log.Errorf("GetBySeq: Sequence Number mismatch: %d != %d", seq, md.Sequence)
+	if md.SequenceNumber != seq {
+		log.Errorf("GetBySeq: Sequence Number mismatch: %d != %d", seq, md.SequenceNumber)
 		return nil, ErrCorrupted
 	}
 
@@ -134,8 +134,8 @@ func (l *BlockIndex) Put(metadata *block.ExtendedMedatadata) (*block.ExtendedMed
 
 	// Copy the metadata object for writing
 	md := &block.ExtendedMedatadata{
-		Sequence: newSeq,
-		Metadata: metadata.Metadata,
+		SequenceNumber: newSeq,
+		Metadata:       metadata.Metadata,
 	}
 
 	// Marshall Metadata to CBOR

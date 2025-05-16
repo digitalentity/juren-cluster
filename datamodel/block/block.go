@@ -22,10 +22,10 @@ type Metadata struct {
 }
 
 type ExtendedMedatadata struct {
-	Sequence   uint64           `cbor:"1,keyasint"`           // Sequence number (local)
-	UpdateTime time.Time        `cbor:"2,keyasint,omitempty"` // Update Time (global)
-	Metadata   *Metadata        `cbor:"3,keyasint,omitempty"` // The metadata entry
-	WhoHas     map[oid.Oid]bool `cbor:"4,keyasint,omitempty"` // IDs of nodes that have this block
+	SequenceNumber uint64           `cbor:"1,keyasint"`           // Sequence number (local)
+	UpdateTime     time.Time        `cbor:"2,keyasint,omitempty"` // Update Time (global)
+	Metadata       *Metadata        `cbor:"3,keyasint,omitempty"` // The metadata entry
+	WhoHas         map[oid.Oid]bool `cbor:"4,keyasint,omitempty"` // IDs of nodes that have this block
 }
 
 // BlockStore defines the interface for storing and retrieving blocks of data.
