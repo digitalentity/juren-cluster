@@ -18,6 +18,7 @@ type Block struct {
 	Data   []byte
 }
 
+// Metadata is the information about the block that is shared (common) throughout the cluster
 type Metadata struct {
 	Oid        oid.Oid   `cbor:"1,keyasint"`
 	Length     uint64    `cbor:"2,keyasint,omitempty"` // Block length
@@ -25,11 +26,10 @@ type Metadata struct {
 	IsDeleted  bool      `cbor:"4,keyasint,omitempty"` // Block is deleted
 }
 
+// ExtendedMetadata stores also some local (node-specific) information, like this node's view of block availability or local sequence number.
 type ExtendedMedatadata struct {
-	SequenceNumber uint64           `cbor:"1,keyasint"`           // Sequence number (local)
-	UpdateTime     time.Time        `cbor:"2,keyasint,omitempty"` // Update Time (global)
-	Metadata       *Metadata        `cbor:"3,keyasint,omitempty"` // The metadata entry
-	WhoHas         map[oid.Oid]bool `cbor:"4,keyasint,omitempty"` // IDs of nodes that have this block
+	SequenceNumber uint64    `cbor:"1,keyasint"`           // Sequence number (local)
+	Metadata       *Metadata `cbor:"3,keyasint,omitempty"` // The metadata entry
 }
 
 // BlockStore defines the interface for storing and retrieving blocks of data.
@@ -88,6 +88,11 @@ type BlockIndex interface {
 	// Enumerate returns all metadata entries in the index.
 	// It returns a slice of MetadataWithSeq objects and an error if the enumeration fails.
 	Enumerate() ([]*ExtendedMedatadata, error)
+
+	// Vacuum performs any necessary cleanup or maintenance operations on the BlockIndex.
+	// This might include tasks like removing outdated entries or optimizing storage.
+	// It returns an error if any issues occur during the vacuuming process.
+	Vacuum() error
 
 	// GetSeq returns the current highest sequence number known to the BlockIndex.
 	// This can be used to determine the latest state of the index.

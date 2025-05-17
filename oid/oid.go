@@ -12,21 +12,19 @@ import (
 type OidType int
 
 const (
-	OidVersionV01 = 0x01
+	OidTypeRawBlock  = 0x08 // Raw data. Replicated on select nodes in a swarm via consistent hashing approach.
+	OidTypeObject    = 0x70 // Chunkset. Replicated on every node in a swarm.
+	OidTypeNode      = 0x68 // Node.
+	OidTypeObjectSet = 0x90 // Objectset. Replicated on every node in a swarm.
 
-	OidTypeRawBlock  = 0x00 // Raw data. Replicated on select nodes in a swarm via consistent hashing approach.
-	OidTypeObject    = 0x01 // Chunkset. Replicated on every node in a swarm.
-	OidTypeObjectSet = 0x02 // Objectset. Replicated on every node in a swarm.
-	OidTypeNode      = 0x03
-
-	OidPaddingByte = 0xAA
+	OidPaddingByte = 0x00
 )
 
 var ErrorHashNot32Bytes = errors.New("hash must be 32 bytes")
 var ErrorInvalidOidString = errors.New("invalid OID string")
 var ErrorInvalidOidFormat = errors.New("invalid OID format")
 
-// Byte structure of an OID is as follows <version:1><padding:1><type:1><hash:32>
+// Byte structure of an OID is as follows <type:1><padding:2><hash:32>
 // Raw bytes are encoded by Base32
 
 // Oid structure holds the string representation of the OID as well as cached type and binary representation.
@@ -54,20 +52,17 @@ func (o *Oid) UnmarshalBinary(data []byte) error {
 		return ErrorInvalidOidFormat
 	}
 
-	switch data[0] {
-	case OidVersionV01:
-		if len(data) != 35 {
-			return ErrorInvalidOidString
-		}
-		if data[1] != OidPaddingByte {
-			return ErrorInvalidOidString
-		}
-		o.t = OidType(data[2])
-		o.s = base32.StdEncoding.EncodeToString(data)
-		copy(o.b[:], data)
-	default:
-		return ErrorInvalidOidFormat
+	if len(data) != 35 {
+		return ErrorInvalidOidString
 	}
+
+	o.t = OidType(data[0])
+	if data[1] != OidPaddingByte || data[2] != OidPaddingByte {
+		return ErrorInvalidOidString
+	}
+
+	o.s = base32.StdEncoding.EncodeToString(data)
+	copy(o.b[:], data)
 
 	return nil
 }
@@ -94,9 +89,9 @@ func Encode(t OidType, hash [32]byte) (*Oid, error) {
 	oidbytes := []byte{}
 
 	// Add version and type
-	oidbytes = append(oidbytes, byte(OidVersionV01))
-	oidbytes = append(oidbytes, OidPaddingByte)
 	oidbytes = append(oidbytes, byte(t))
+	oidbytes = append(oidbytes, OidPaddingByte)
+	oidbytes = append(oidbytes, OidPaddingByte)
 	oidbytes = append(oidbytes, hash[:]...)
 
 	o := &Oid{

@@ -2,8 +2,11 @@ package commands
 
 import (
 	"context"
+	"crypto/sha256"
 	"juren/config"
+	"juren/datamodel/block"
 	"juren/datastore/leveldb"
+	"juren/oid"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -20,24 +23,22 @@ func RunInfo(ctx context.Context, cfg *config.Config) {
 		log.Fatalf("Failed to create node index: %v", err)
 	}
 
-	// o := oid.FromStringMustParse("AGVABZGP4JKRP2AK4YSGHKS7WH2C7P44XDNWJ4EDYP4B2GQ5UFQQQBXT")
-	// blk := &block.ExtendedMedatadata{
-	// 	SequenceNumber: 0,
-	// 	UpdateTime:     time.Now(),
-	// 	WhoHas:         map[oid.Oid]bool{},
-	// 	Metadata: &block.Metadata{
-	// 		Oid:        *o,
-	// 		Length:     10,
-	// 		UpdateTime: time.Now(),
-	// 		IsDeleted:  false,
-	// 	},
-	// }
-
-	// md, err := bidx.Put(blk)
-	// if err != nil {
-	// 	log.Fatalf("Failed to put metadata: %v", err)
-	// }
-	// log.Infof("Put metadata: %s, seq: %d", md.Metadata.Oid.String(), md.SequenceNumber)
+	o, _ := oid.Encode(oid.OidTypeRawBlock, sha256.Sum256([]byte("test2")))
+	log.Infof("OID %s", o.String())
+	blk := &block.ExtendedMedatadata{
+		SequenceNumber: 0,
+		Metadata: &block.Metadata{
+			Oid:        *o,
+			Length:     10,
+			UpdateTime: time.Now(),
+			IsDeleted:  false,
+		},
+	}
+	md, err := bidx.Put(blk)
+	if err != nil {
+		log.Fatalf("Failed to put metadata: %v", err)
+	}
+	log.Infof("Put metadata: %s, seq: %d", md.Metadata.Oid.String(), md.SequenceNumber)
 
 	nodes, err := nidx.Enumerate()
 	if err != nil {
@@ -62,8 +63,7 @@ func RunInfo(ctx context.Context, cfg *config.Config) {
 
 	log.Infof("Block index: %d blocks known", len(blocks))
 	for _, block := range blocks {
-		log.Infof("Block: %s, seq: %d, len: %d, updated: %v, deleted: %t, whohas: %v",
-			block.Metadata.Oid.String(), block.SequenceNumber, block.Metadata.Length, block.Metadata.UpdateTime, block.Metadata.IsDeleted, block.WhoHas)
+		log.Infof("Block: %s, seq: %d, len: %d, updated: %v, deleted: %t",
+			block.Metadata.Oid.String(), block.SequenceNumber, block.Metadata.Length, block.Metadata.UpdateTime, block.Metadata.IsDeleted)
 	}
-
 }

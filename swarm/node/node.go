@@ -23,6 +23,7 @@ import (
 )
 
 const BlockIndexSyncBatchSize = 100
+const BlockLookupTimeout = 1 * time.Second
 
 type Node struct {
 	// Configuration
@@ -36,6 +37,9 @@ type Node struct {
 	BlockStore block.BlockStore
 	BlockIndex block.BlockIndex
 	NodeIndex  node.NodeIndex
+
+	// Real-time block availability information
+	WhoHasBlock *BlockAvailabilityTracker
 
 	// Networking
 	RpcServer *crpc.Server
@@ -52,11 +56,12 @@ type Node struct {
 func New(cfg *config.Config, blockstore block.BlockStore, blockindex block.BlockIndex, nodeindex node.NodeIndex, rpcServer *crpc.Server, pubsub *mpubsub.PubSub) (*Node, error) {
 	// Create the node object
 	node := &Node{
-		cfg:        cfg,
-		NodeID:     cfg.Node.NodeID,
-		BlockStore: blockstore,
-		BlockIndex: blockindex,
-		NodeIndex:  nodeindex,
+		cfg:         cfg,
+		NodeID:      cfg.Node.NodeID,
+		BlockStore:  blockstore,
+		BlockIndex:  blockindex,
+		NodeIndex:   nodeindex,
+		WhoHasBlock: NewBlockAvailabilityTracker(),
 	}
 
 	if cfg.Network.RpcAdvertizedAddress != "" {
@@ -190,21 +195,23 @@ func (n *Node) syncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
 			for _, block := range ps.Entries {
 				log.Debugf("SyncBlockIndexAndUpdateMetadata: received seq %d, oid: %s, updated: %v", block.SequenceNumber, block.Metadata.Oid.String(), block.Metadata.UpdateTime)
 
-				_, err := n.BlockIndex.Put(block)
-				if err != nil {
+				// Put will update the block (if different) and assign it a new sequence number. We don't care about that new sequence number.
+				if _, err := n.BlockIndex.Put(block); err != nil {
 					return nil, fmt.Errorf("failed to put block metadata: %w", err)
 				}
+
+				// We track the max seen sequence number from this node
 				maxSeenBlockSeq = max(maxSeenBlockSeq, block.SequenceNumber)
 			}
 
-			// We're done processing this batch, write Node Metadata to avoid loosing progress
+			// We're done processing this batch, write Node Metadata to avoid loosing progress.
+			// We only store the metadata once we successfully processed all the blocks.
 
 			// Override the sequence number - record the number until which we have synced
 			newMetadata.SequenceNumber = maxSeenBlockSeq
 
 			// Update the metadata in the NodeIndex. This only happens if we successfully fetched and processed all the blocks
-			_, err = n.NodeIndex.Put(newMetadata)
-			if err != nil {
+			if _, err = n.NodeIndex.Put(newMetadata); err != nil {
 				return nil, fmt.Errorf("failed to update node metadata: %v", err)
 			}
 
@@ -219,6 +226,82 @@ func (n *Node) syncBlockIndexAndUpdateMetadata(newMetadata *node.Metadata) {
 
 	if err != nil {
 		log.Errorf("SyncBlockIndexAndUpdateMetadata: %v", err)
+	}
+}
+
+func (n *Node) updateBlockAvailability(msg *protocol.BlockAnnouncementMessage) {
+	// Update the block availability
+	n.WhoHasBlock.Update(&msg.Block.Oid, &msg.NodeID, msg.Has)
+
+	// If an update is not coming from THIS NODE: put will update the block (if different) and assign it a new sequence number.
+	if msg.NodeID != *n.NodeID {
+		// Also update block metadata. This is an asynchronous update and it doesn't trigger a full sync with the provoker node.
+		emd := &block.ExtendedMedatadata{
+			SequenceNumber: 0, // Put() will assign a new one if needed
+			Metadata:       &msg.Block,
+		}
+
+		if _, err := n.BlockIndex.Put(emd); err != nil {
+			log.Errorf("failed to put block metadata: %w", err)
+		}
+	}
+}
+
+// We respond to the BlockDiscoveryMessage regardless whether we have a block in storage or not.
+// This data will be used by all nodes in the cluster to update their local WhoHas cache.
+func (n *Node) processBlockDiscoveryMessage(msg *protocol.BlockDiscoveryMessage) {
+	// Fetch block metadata
+	md, err := n.BlockIndex.GetByOid(&msg.Oid)
+	if err != nil {
+		log.Errorf("failed to get block metadata: %w", err)
+		return
+	}
+
+	// Check if we have this block in local storage
+	has, err := n.BlockStore.Has(&msg.Oid)
+	if err != nil {
+		log.Errorf("failed to check block existence: %w", err)
+		return
+	}
+
+	resp := &protocol.BlockAnnouncementMessage{NodeID: *n.NodeID, Block: *md.Metadata, Has: has}
+	if err := n.PubSub.Publish("PubSub.BlockAnnouncement", resp); err != nil {
+		log.Errorf("failed to publish block announcement: %w", err)
+		return
+	}
+}
+
+// DiscoverBlock performs block discovery. If we have data in the local WhoHasBlock cache, it is returned immediately.
+// If WhoHasBlock is empty for that block, a BlockDiscoveryMessage is sent and DiscoverBlock waits for updates.
+func (n *Node) DiscoverBlock(ctx context.Context, boid *oid.Oid) ([]*oid.Oid, error) {
+	lctx, cancel := context.WithTimeout(ctx, BlockLookupTimeout)
+	defer cancel()
+
+	// Send a block discovery message
+	msg := &protocol.BlockDiscoveryMessage{
+		Oid: *boid,
+	}
+
+	if err := n.PubSub.Publish("PubSub.BlockDiscoveryMessage", msg); err != nil {
+		return nil, fmt.Errorf("failed to publish block discovery message: %w", err)
+	}
+
+	// Wait for updates
+	// FIXME: we should probably implement subscribing mechanism here so we'll not waste 10ms on waiting.
+	for {
+		select {
+		case <-lctx.Done():
+			// Return what we have so far
+			if nodes := n.WhoHasBlock.WhoHas(boid); len(nodes) > 0 {
+				return nodes, lctx.Err()
+			}
+			return nil, fmt.Errorf("block discovery timeout")
+		case <-time.After(10 * time.Millisecond):
+			// Check if we have any updates
+			if nodes := n.WhoHasBlock.WhoHas(boid); len(nodes) > 0 {
+				return nodes, nil
+			}
+		}
 	}
 }
 

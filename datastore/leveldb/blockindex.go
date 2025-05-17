@@ -130,7 +130,7 @@ func (l *BlockIndex) Put(metadata *block.ExtendedMedatadata) (*block.ExtendedMed
 				return existing, nil
 			}
 
-			// Now check if the existing metadata has a newer timestamp
+			// Metadata is different. Now check which is more fresh.
 			if existing.Metadata.UpdateTime.After(metadata.Metadata.UpdateTime) {
 				log.Debugf("Put: New metadata for OID %s is older, skipping update", oid.String())
 				return existing, nil
@@ -250,4 +250,13 @@ func (l *BlockIndex) GetSeq() uint64 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.seq
+}
+
+// Vacuum removes obsolete entries for the sequence log, keeping only the latest entry for each block.
+// This effectively deletes the block change history.
+func (l *BlockIndex) Vacuum() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return nil
 }

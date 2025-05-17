@@ -53,5 +53,11 @@ func (s *PubSub) PeerAnnouncement(sender *mpubsub.PublisherAddress, msg *protoco
 func (s *PubSub) BlockAnnouncement(sender *mpubsub.PublisherAddress, msg *protocol.BlockAnnouncementMessage) {
 	log.Infof("BlockAnnouncement from %s: node: %s, block: %s, has: %t", sender.IP.String(), msg.NodeID.String(), msg.Block.Oid.String(), msg.Has)
 
-	// TODO
+	go s.node.updateBlockAvailability(msg)
+}
+
+func (s *PubSub) BlockDiscoveryMessage(sender *mpubsub.PublisherAddress, msg *protocol.BlockDiscoveryMessage) {
+	log.Infof("BlockDiscoveryMessage from %s: block: %s", sender.IP.String(), msg.Oid.String())
+
+	go s.node.processBlockDiscoveryMessage(msg)
 }

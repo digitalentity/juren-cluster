@@ -7,8 +7,10 @@ import (
 	"juren/datastore/leveldb"
 	"juren/net/crpc"
 	"juren/net/mpubsub"
+	"juren/oid"
 	"juren/swarm/node"
 	"net"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -63,6 +65,19 @@ func RunTest(ctx context.Context, cfg *config.Config) {
 	if err != nil {
 		log.Fatalf("Failed to create node: %v", err)
 	}
+
+	go func() {
+		time.Sleep(1 * time.Second)
+
+		o := oid.FromStringMustParse("BAAAAYBQHLRCXGMIMG6OHMUPGPXMDPTVRIQTZBWJHQDW3PU7KWGBDR2S")
+		n, err := node.DiscoverBlock(ctx, o)
+		if err != nil {
+			log.Errorf("Failed to discover block: %v", err)
+		}
+		for _, nodeid := range n {
+			log.Infof("Block %s is available at %s", o.String(), nodeid.String())
+		}
+	}()
 
 	// Run the node
 	if err := node.Run(ctx); err != nil {

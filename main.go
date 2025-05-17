@@ -275,6 +275,11 @@ func checkConfig(cfg string) {
 
 // main is the entry point of the application.
 func main() {
+
+	// o, _ := oid.Encode(oid.OidTypeNode, sha256.Sum256([]byte("test2")))
+	// log.Infof("OID %s", o.String())
+	// return
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
