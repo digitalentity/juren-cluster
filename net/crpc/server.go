@@ -51,12 +51,12 @@ func (srv *Server) Register(rcvr any) error {
 	sname := reflect.Indirect(s.rcvr).Type().Name()
 	if sname == "" {
 		s := fmt.Sprintf("rpc.Register: no service name for type %s", s.typ.String())
-		log.Errorf(s)
+		log.Error(s)
 		return errors.New(s)
 	}
 	if !token.IsExported(sname) {
 		s := "rpc.Register: type " + sname + " is not exported"
-		log.Print(s)
+		log.Error(s)
 		return errors.New(s)
 	}
 	s.name = sname

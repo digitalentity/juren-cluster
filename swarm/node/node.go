@@ -107,6 +107,8 @@ func (n *Node) publishPeerAnnouncement(ctx context.Context) error {
 		NodeID:         *n.NodeID,
 		Addresses:      n.Addresses,
 		SequenceNumber: n.BlockIndex.GetSeq(),
+		Capabilities:   []node.Capability{},
+		StorageUsage:   node.StorageUsage{},
 	}
 
 	if err := n.PubSub.Publish("PubSub.PeerAnnouncement", msg); err != nil {
@@ -242,7 +244,7 @@ func (n *Node) updateBlockAvailability(msg *protocol.BlockAnnouncementMessage) {
 		}
 
 		if _, err := n.BlockIndex.Put(emd); err != nil {
-			log.Errorf("failed to put block metadata: %w", err)
+			log.Errorf("failed to put block metadata: %v", err)
 		}
 	}
 }
@@ -253,20 +255,20 @@ func (n *Node) processBlockDiscoveryMessage(msg *protocol.BlockDiscoveryMessage)
 	// Fetch block metadata
 	md, err := n.BlockIndex.GetByOid(&msg.Oid)
 	if err != nil {
-		log.Errorf("failed to get block metadata: %w", err)
+		log.Errorf("failed to get block metadata: %v", err)
 		return
 	}
 
 	// Check if we have this block in local storage
 	has, err := n.BlockStore.Has(&msg.Oid)
 	if err != nil {
-		log.Errorf("failed to check block existence: %w", err)
+		log.Errorf("failed to check block existence: %v", err)
 		return
 	}
 
 	resp := &protocol.BlockAnnouncementMessage{NodeID: *n.NodeID, Block: *md.Metadata, Has: has}
 	if err := n.PubSub.Publish("PubSub.BlockAnnouncement", resp); err != nil {
-		log.Errorf("failed to publish block announcement: %w", err)
+		log.Errorf("failed to publish block announcement: %v", err)
 		return
 	}
 }

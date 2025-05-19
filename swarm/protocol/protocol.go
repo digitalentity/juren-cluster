@@ -2,14 +2,17 @@ package protocol
 
 import (
 	"juren/datamodel/block"
+	"juren/datamodel/node"
 	"juren/oid"
 )
 
 // PeerAnnouncementMessage is broadcast by a Node to announce its presence, RPC address and Local Block Index sequence.
 type PeerAnnouncementMessage struct {
-	NodeID         oid.Oid  `cbor:"1,keyasint,omitempty"` // Node identifier
-	Addresses      []string `cbor:"2,keyasint,omitempty"` // Node network address and port
-	SequenceNumber uint64   `cbor:"3,keyasint,omitempty"` // Local Block Index sequence number
+	NodeID         oid.Oid           `cbor:"1,keyasint,omitempty"` // Node identifier
+	Addresses      []string          `cbor:"2,keyasint,omitempty"` // Node network address and port
+	SequenceNumber uint64            `cbor:"3,keyasint,omitempty"` // Local Block Index sequence number
+	Capabilities   []node.Capability `cbor:"4,keyasint,omitempty"` // Node capabilities
+	StorageUsage   node.StorageUsage `cbor:"5,keyasint,omitempty"` // Node storage info
 }
 
 // BlockAnnouncementMessage is broadcast by a Node to announce presence of the block in local storage.

@@ -41,6 +41,8 @@ func (s *PubSub) PeerAnnouncement(sender *mpubsub.PublisherAddress, msg *protoco
 		Addresses:      filteredAddresses,
 		SequenceNumber: msg.SequenceNumber,
 		LastSeen:       time.Now(),
+		Capabilities:   node.BuildCapabilityMap(msg.Capabilities),
+		StorageUsage:   msg.StorageUsage,
 	}
 
 	// Initiate a sync and metadata update. The syncBlockIndexAndUpdateMetadata will take care of the rest
